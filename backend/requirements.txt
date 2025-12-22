@@ -1,0 +1,5 @@
+fastapi==0.127.0
+python-dotenv==1.2.1
+httpx==0.28.1
+PyJWT==2.10.1
+supabase==2.27.0
