@@ -53,27 +53,36 @@ async def ask_user_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Please provide your PIN:")
     return ASK_PIN
 
-async def ask_pin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def ask_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pin_input = update.message.text.strip()
-    user = ctx.user_data["user_record"]
-    user_id_input = ctx.user_data["user_id"]
+    user_id_input = context.user_data.get("user_id")
+    telegram_user_id = update.effective_user.id
+    print(f"Verifying user_id: {user_id_input} with PIN: {pin_input}")
 
-    if str(user.get("code")) != pin_input:
+    # Fetch latest record from Supabase
+    response = supabase.table("users").select("*").eq("user_id", user_id_input).execute()
+    user_record = response.data[0] if response.data else None
+
+    if not user_record:
+        await update.message.reply_text("❌ User not found.")
+        return ConversationHandler.END
+
+    if str(user_record.get("activation_code")) != pin_input:
         await update.message.reply_text("❌ Invalid PIN.")
         return ConversationHandler.END
 
-    telegram_user_id = update.effective_user.id
-    invite_link = user.get("invite_link")
+    # Send invite link
+    invite_link = user_record.get("invite_link")
+    await update.message.reply_text(f"✅ Verified! Here is your chat invite link:\n{invite_link}")
 
-    await update.message.reply_text(
-        f"✅ Verified!\nHere is your invite link:\n{invite_link}"
-    )
-
+    # Update user as verified and store Telegram ID
     supabase.table("users").update({
         "status": "verified",
         "telegram_id": telegram_user_id,
-        "active": True
+        "telegram_name": update.effective_user.username,
     }).eq("user_id", user_id_input).execute()
+
+    print(f"User {user_id_input} verified with Telegram ID {telegram_user_id}.")
 
     return ConversationHandler.END
 
@@ -85,23 +94,84 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # Chat member updates
 # --------------------
 async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    result = update.chat_member
+    print("Chat member update received:", update)
+
+    # 1️⃣ BOT join/leave
+    if update.my_chat_member:
+        result = update.my_chat_member
+    # 2️⃣ USER join/leave
+    elif update.chat_member:
+        result = update.chat_member
+    else:
+        return  # nothing to do
+
     user = result.new_chat_member.user
     status = result.new_chat_member.status
+    chat = result.chat
 
+    bot_id = (await ctx.bot.get_me()).id
+
+    # --------------------
+    # BOT JOIN / LEAVE
+    # --------------------
+    if user.id == bot_id:
+        if status in ("member", "administrator"):
+            supabase.table("bot_chats").upsert({
+                "chat_id": chat.id,
+                "chat_name": chat.title
+            }).execute()
+            print(f"✅ Bot joined chat {chat.title} ({chat.id})")
+
+        elif status == "left":
+            supabase.table("bot_chats") \
+                .delete() \
+                .eq("chat_id", chat.id) \
+                .execute()
+            print(f"❌ Bot left chat {chat.title} ({chat.id})")
+
+        return
+
+    # --------------------
+    # USER JOIN
+    # --------------------
     if status == "member":
-        supabase.table("users").update({"active": True}) \
-            .eq("telegram_id", user.id).execute()
-        await ctx.bot.send_message(
-            result.chat.id, f"👋 Welcome, {user.first_name}!"
-        )
+        response = supabase.table("users") \
+            .select("*") \
+            .eq("telegram_id", user.id) \
+            .execute()
 
+        user_record = response.data[0] if response.data else None
+
+        if not user_record or user_record.get("status") != "verified":
+            try:
+                await ctx.bot.send_message(
+                    user.id,
+                    "🚫 You were removed because your account is not verified. Please verify it first."
+                )
+            except Exception:
+                pass  # User never started the bot. but this should not be the case if user ferified with bot. If it was pending then user only was adde by admin.
+
+            await ctx.bot.ban_chat_member(chat.id, user.id)
+            return
+
+        # Mark user as active in chat_members table
+        supabase.table("chat_members") \
+            .update({"is_member_active": "active"}) \
+            .eq("chat_id", chat.id) \
+            .execute()
+
+        await ctx.bot.send_message(user.id, f"👋 Welcome to {chat.title}, {user.first_name}!")
+
+    # --------------------
+    # USER LEAVE
+    # --------------------
     elif status == "left":
-        supabase.table("users").update({"active": False}) \
-            .eq("telegram_id", user.id).execute()
-        await ctx.bot.send_message(
-            result.chat.id, f"👋 Goodbye, {user.first_name}!"
-        )
+        supabase.table("users") \
+            .update({"active": "inactive"}) \
+            .eq("telegram_id", user.id) \
+            .execute()
+
+        print(f"👋 User left: {user.first_name}")
 
 # --------------------
 # Inline queries
@@ -136,6 +206,7 @@ def main():
 
     app.add_handler(conv)
     app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.CHAT_MEMBER))
+    app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(InlineQueryHandler(inline_query))
 
     print("🤖 Bot running (PTB v20+, polling)...")

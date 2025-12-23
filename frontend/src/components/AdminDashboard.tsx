@@ -12,6 +12,7 @@ import {
   Drawer,
   Modal,
   Form,
+  Select,
   message,
   Divider,
   Space,
@@ -49,11 +50,12 @@ interface TelegramUser {
   first_name: string;
   last_name?: string;
   user_name?: string;
+  status?: string;
   email?: string;
   created_at?: string;
 }
 
-type MenuKey = "users" | "invites" | "settings";
+type MenuKey = "users" | "invites" | "bot";
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -80,9 +82,14 @@ const AdminDashboard: React.FC = () => {
   // Pending users state
   const [pendingUsers, setPendingUsers] = useState<TelegramUser[]>([]);
 
-
-  console.log(import.meta.env);
+  // Form instance for Add/Edit User
   const [form] = Form.useForm();
+
+  // Select component Option for chat names
+  const { Option } = Select;
+
+  const [loadingBotChats, setLoadingBotChats] = useState(false);
+  const [botChats, setBotChats] = useState<any[]>([]);
 
   const onLogout = () => navigate("/admin/login", { replace: true });
 
@@ -126,16 +133,16 @@ const AdminDashboard: React.FC = () => {
   const { data, error } = await supabase
     .from("users")
     .select("*")
-    .eq("status", "pending")
+    .in("status", ["pending","verified"]) // Adjust the condition as needed
     .order("created_at", { ascending: false });
 
-  if (error) {
-    message.error("Failed to load invites");
-    return [];
-  }
+    if (error) {
+      message.error("Failed to load invites");
+      return [];
+    }
 
-  return data || [];
-};
+    return data || [];
+  };
 
   const refreshUsers = () => {
     setUsers([]);
@@ -144,20 +151,64 @@ const AdminDashboard: React.FC = () => {
     fetchUsers();
   };
 
+  // Fetch bot chats
+  const fetchBotChats = async () => {
+    setLoadingBotChats(true);
+    try {
+      const { data, error } = await supabase
+        .from("bot_chats") // table containing chat info
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setBotChats(data || []);
+    } catch (err: any) {
+      message.error("Failed to load bot chats: " + err.message);
+    } finally {
+      setLoadingBotChats(false);
+    }
+  };
+
+  // Fetch data on menu change
+  useEffect(() => {
+    if (selectedMenu === "bot") fetchBotChats();
+    }, [selectedMenu]);
+  
+    // Fetch bot chats when add modal is opened for user addition
+  useEffect(() => {
+  if (addModalVisible && !selectedUser) {
+    fetchBotChats();
+  }
+}, [addModalVisible]);
+
   useEffect(() => {
     if (selectedMenu === "users") fetchUsers();
     else if (selectedMenu === "invites") fetchPendingUsers().then(setPendingUsers);
   }, [selectedMenu]);
 
+  // Generate random string for invite link
+  function generateRandomString(length = 10) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i++) {
+      const randomIndex = Math.floor(Math.random() * chars.length);
+      result += chars[randomIndex];
+    }
+    return result;
+}
+
   const generateInvite = async () => {
     setLoadingInvite(true);
-    try {
-      const res = await axios.get(`${BACKEND}/generate-invite`);
-      setInviteLink(res.data.invite);
-      message.success("Invite generated");
-    } catch (e: any) {
-      message.error(e.message);
-    }
+    const newLink = generateRandomString(10);
+    setInviteLink(newLink);
+    form.setFieldsValue({ activation_code: newLink });
+    // try {
+    //   const res = await axios.get(`${BACKEND}/generate-invite`); // Porpably do not need ti
+    //   setInviteLink(generateRandomString(10));
+    //   message.success("Invite generated");
+    // } catch (e: any) {
+    //   message.error(e.message);
+    // }
     setLoadingInvite(false);
   };
 
@@ -199,14 +250,41 @@ const handleAddUser = async (values: any) => {
       message.success("User updated successfully");
     } else {
       // Adding new user
-      const { data, error } = await supabase.from("users").insert([values]);
-      if (error) throw error;
-      message.success("User added successfully");
+  try {
+      const { chat_id, ...userData } = values;
+
+      // 1️⃣ Insert user
+      const { data: users, error: userError } = await supabase
+        .from("users")
+        .insert([userData])
+        .select()
+        .single();
+
+      if (userError) throw userError;
+
+      // 2️⃣ Insert relation into chat_members
+      const { error: memberError } = await supabase
+        .from("chat_members")
+        .insert([
+          {
+            user_id: users.id,
+            chat_id: chat_id,
+            is_member_active: "pending",
+          },
+        ]);
+
+      if (memberError) throw memberError;
+
+      message.success("User added to chat successfully");
+    } catch (err: any) {
+      message.error(err.message);
+    }
     }
 
     setAddModalVisible(false);
     setDrawerVisible(false);
     setSelectedUser(null);
+    setInviteLink("");
     form.resetFields();
     refreshUsers();
   } catch (err: any) {
@@ -274,7 +352,7 @@ const handleAddUser = async (values: any) => {
           items={[
             { key: "users", icon: <TeamOutlined />, label: "Users" },
             { key: "invites", icon: <LinkOutlined />, label: "Invites" },
-            { key: "settings", icon: <SettingOutlined />, label: "Settings" },
+            { key: "bot", icon: <UserOutlined />, label: "Bot Chat" },
           ]}
           style={{ borderRadius: 12, overflow: "hidden" }}
         />
@@ -400,8 +478,10 @@ const handleAddUser = async (values: any) => {
                           <Typography.Text type="secondary">
                             Invited on {dayjs(user.created_at).format("DD MMM YYYY")}
                           </Typography.Text>
-                          <br />
-                          <Tag color="gold">Pending</Tag>
+                          <br />{user.status == "pending" ? (
+                          <Tag color="gold">{user.status}</Tag>
+                          ) : (<Tag color="green">{user.status}</Tag>)
+                          }
                         </>
                       }
                     />
@@ -409,6 +489,37 @@ const handleAddUser = async (values: any) => {
                 )}
               />
             </>
+          )}
+
+          {selectedMenu === "bot" && (
+             <>
+            <Typography.Title level={3}>Bot Chats</Typography.Title>
+
+            {loadingBotChats ? (
+              <Spin />
+            ) : (
+              <List
+                dataSource={botChats}
+                renderItem={(chat) => (
+                  <List.Item
+                    key={chat.id}
+                    style={{
+                      borderRadius: 8,
+                      padding: 16,
+                      marginBottom: 12,
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <List.Item.Meta
+                      title={`Chat ID: ${chat.chat_id} - ${chat.chat_name || "No title"}`}
+                      description={`Users: ${chat.seen_members} | Joined: ${chat.created_at ? dayjs(chat.created_at).format("DD MMM YYYY") : "—"}`}
+                    />
+                  </List.Item>
+                )}
+              />
+            )}
+          </>
           )}
 
         </Content>
@@ -507,10 +618,32 @@ const handleAddUser = async (values: any) => {
             <Input />
           </Form.Item>
 
+          <Form.Item
+            name="chat_id"
+            label="Chat Name"
+            rules={[{ required: true, message: "Please select a chat!" }]}
+          >
+            {loadingBotChats ? (
+              <Spin />
+            ) : (
+              <Select placeholder="Select a chat">
+                {botChats.map((chat) => (
+                  <Select.Option key={chat.id} value={chat.chat_id}>
+                    {chat.chat_name}
+                  </Select.Option>
+                ))}
+              </Select>
+            )}
+          </Form.Item>
+
           {/* INVITE SECTION */}
           {!selectedUser && (
             <>
-              <Divider orientation="left">Invite via Telegram</Divider>
+              <Divider orientation="left">Activation Code</Divider>
+
+                <Form.Item name="activation_code" style={{ display: 'none' }}>
+                  <Input />
+                </Form.Item>
 
               <Space direction="vertical" style={{ width: "100%" }}>
                 <Button
@@ -518,7 +651,7 @@ const handleAddUser = async (values: any) => {
                   loading={loadingInvite}
                   onClick={generateInvite}
                 >
-                  Generate Invite Link
+                  Generate Activation Code
                 </Button>
 
                 {inviteLink && (

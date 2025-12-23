@@ -2,6 +2,7 @@ import os
 import jwt
 import datetime
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -20,6 +21,21 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ----------------- Initialize FastAPI -----------------
 app = FastAPI()
+
+# Allow your frontend to access the backend
+origins = [
+    "http://localhost:5173",  # your frontend URL
+    "http://127.0.0.1:5173",  # optional, if you use this
+    "*",  # optional: allow all origins (not recommended in production)
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ----------------- Generate Invite Endpoint -----------------
 @app.get("/generate-invite")
