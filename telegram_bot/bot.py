@@ -23,6 +23,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# TODO:: All related to Supabase should be moved to api fatapi
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --------------------
@@ -50,7 +51,7 @@ async def ask_user_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["user_id"] = user_id_input
     ctx.user_data["user_record"] = user
 
-    await update.message.reply_text("Please provide your PIN:")
+    await update.message.reply_text("Please provide your verification code:")
     return ASK_PIN
 
 async def ask_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -39,22 +39,22 @@ const VerifyWebApp: React.FC = () => {
     }
   };
 
-  const submitId = async (values: { user_private_id: string, name: string, surname: string }) => {
-    try {
-      // Receive Id user name sure name emailaddres teelegram id
-      // await axios.post(`${BACKEND}/api/store-user-id`, {
-      //   inviteToken,
-      //   userId: values.user_private_id,
-      //   name: values.name,
-      //   surname: values.surname,
-      //   telegramUserId: userId
-      // });
-      msgAntd.success("✅ ID submitted successfully!");
-      // once get info send to the user link to the chat
-    } catch (err: any) {
-      msgAntd.error("❌ Error submitting ID: " + err.message);
-    }
-  };
+  // const submitId = async (values: { user_private_id: string, name: string, surname: string }) => {
+  //   try {
+  //     // Receive Id user name sure name emailaddres teelegram id
+  //     // await axios.post(`${BACKEND}/api/store-user-id`, {
+  //     //   inviteToken,
+  //     //   userId: values.user_private_id,
+  //     //   name: values.name,
+  //     //   surname: values.surname,
+  //     //   telegramUserId: userId
+  //     // });
+  //     msgAntd.success("✅ ID submitted successfully!");
+  //     // once get info send to the user link to the chat
+  //   } catch (err: any) {
+  //     msgAntd.error("❌ Error submitting ID: " + err.message);
+  //   }
+  // };
 
   useEffect(() => {
     verify();
@@ -69,7 +69,7 @@ const VerifyWebApp: React.FC = () => {
           Retry Verification
         </Button>
       ) : (
-        <Form layout="vertical" onFinish={submitId}>
+        <Form layout="vertical" /*onFinish={submitId}*/>
           <Form.Item
             label="Enter Your ID"
             name="user_private_id"

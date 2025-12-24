@@ -18,42 +18,56 @@ import {
   Space,
   Popconfirm,
   Tag,
+  FloatButton,
 } from "antd";
 import {
   TeamOutlined,
   LinkOutlined,
-  SettingOutlined,
   LogoutOutlined,
-  PlusOutlined,
   DeleteOutlined,
   EditOutlined,
   UserOutlined,
+  SendOutlined,
+  RobotOutlined,
+  UserAddOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+//import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 
-const { Header, Sider, Content } = Layout;
-const { Title, Text } = Typography;
-const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+const { Sider, Content } = Layout;
+const { Text } = Typography;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 const PAGE_SIZE = 20;
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL!;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY!;
+const ADMIN_JWT_TOKEN = import.meta.env.VITE_ADMIN_JWT_TOKEN || "";
 
 const supabase = createClient(
   SUPABASE_URL,
   SUPABASE_KEY
 );
+
+type UserChatInfo = {
+  chat_id: string;
+  is_member_active: "active" | "pending";
+};
+
 interface TelegramUser {
   id: number;
+  user_id?: string;
   first_name: string;
   last_name?: string;
   user_name?: string;
   status?: string;
   email?: string;
+  telegram_id?: string;
   created_at?: string;
+  is_member_active?: string;
+  chats?: UserChatInfo[]; // 👈 joined chats
 }
+
 
 type MenuKey = "users" | "invites" | "bot";
 
@@ -82,22 +96,41 @@ const AdminDashboard: React.FC = () => {
   // Pending users state
   const [pendingUsers, setPendingUsers] = useState<TelegramUser[]>([]);
 
+  // Selected chat for user addition
+  const [selectedChatId, setSelectedChatId] = useState<string>("all");
+
+  const [inviteChatIds, setInviteChatIds] = useState<string[]>([]);
+
   // Form instance for Add/Edit User
   const [form] = Form.useForm();
 
   // Select component Option for chat names
-  const { Option } = Select;
+  //const { Option } = Select;
 
   const [loadingBotChats, setLoadingBotChats] = useState(false);
   const [botChats, setBotChats] = useState<any[]>([]);
 
   const onLogout = () => navigate("/admin/login", { replace: true });
 
+  // Separate chats into member and non-member based on selected user
+  const memberChatIds = new Set(
+  selectedUser?.chats?.map(c => c.chat_id)
+  );
+
+  // Chats where the user is a member vs not a member
+  const memberChats = botChats.filter(c => memberChatIds.has(c.chat_id));
+  const nonMemberChats = botChats.filter(c => !memberChatIds.has(c.chat_id));
+
   // Fetch users with deduplication
   const fetchUsers = async () => {
-    if (loading || !hasMore) return;
-    setLoading(true);
 
+    // TODO: need to implemnt it here
+    //  if (loading || !hasMore) return;
+    hasMore; 
+
+    if (loading ) return;
+    setLoading(true);
+    console.log("Fetching users, page:", page);
     try {
       const { data, error } = await supabase
         .from("users")
@@ -128,12 +161,76 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const fetchUserChats = async (userId: number) => {
+    const { data, error } = await supabase
+      .from("chat_members")
+      .select(`
+        chat_id,
+        is_member_active,
+        bot_chats (
+          chat_id,
+          chat_name
+        )
+      `)
+      .eq("user_id", userId);
+
+    if (error) {
+      message.error("Failed to fetch user chats");
+      return [];
+    }
+
+    return data ?? [];
+  };
+
+
+  // Fetch users for selected chat
+const fetchChatMembers = async (chatId: string) => {
+   const { data, error } = await supabase
+    .from("chat_members")
+    .select(`
+      is_member_active,
+      user_id,
+      users (
+        id,
+        first_name,
+        last_name,
+        user_name,
+        email,
+        status,
+        created_at
+      )
+    `)
+    .eq("chat_id", chatId);
+
+  if (error) {
+    message.error(error.message);
+    return [];
+  }
+
+  console.log("Fetched chat members data:", data);
+  // Flatten the structure so each user object contains is_member_active
+  const usersWithStatus = (data || []).map((item: any) => ({
+    ...item.users,
+    is_member_active: item.is_member_active,
+  }));
+
+  setUsers(usersWithStatus);
+  };
+
+
+  // Fetch chat members when selected chat changes
+  useEffect(() => {
+    console.log("Selected chat ID changed:", selectedChatId);
+    if (selectedChatId === 'all') fetchUsers();
+    else fetchChatMembers(selectedChatId);
+  }, [selectedChatId]);
+
   // Fetch pending users
   const fetchPendingUsers = async () => {
   const { data, error } = await supabase
     .from("users")
     .select("*")
-    .in("status", ["pending","verified"]) // Adjust the condition as needed
+    .in("status", ["pending"]) // Adjust the condition as needed
     .order("created_at", { ascending: false });
 
     if (error) {
@@ -169,6 +266,46 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Invite user to chat
+  const inviteUserToChat = async (chatId: string, userId: string) => {
+    const res = await fetch(`${BACKEND_URL}/api/chats/invite-user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${ADMIN_JWT_TOKEN}`
+      },
+      body: JSON.stringify({ chat_id: chatId, telegram_user_id: userId })
+
+      
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.detail || "Failed to invite user");
+    }
+
+    return res.json();
+  };
+
+  // Remove user from chat API call
+  const removeUserFromChat = async (chatId: string, userId: string) => {
+  const res = await fetch(`${BACKEND_URL}/api/chats/remove-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${ADMIN_JWT_TOKEN}`
+    },
+    body: JSON.stringify({ chat_id: chatId, telegram_user_id: userId })
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.detail || "Failed to remove user");
+    }
+
+  return res.json();
+};
+
   // Fetch data on menu change
   useEffect(() => {
     if (selectedMenu === "bot") fetchBotChats();
@@ -197,25 +334,33 @@ const AdminDashboard: React.FC = () => {
     return result;
 }
 
-  const generateInvite = async () => {
+  const generateActivationCode = async () => {
     setLoadingInvite(true);
     const newLink = generateRandomString(10);
     setInviteLink(newLink);
     form.setFieldsValue({ activation_code: newLink });
-    // try {
-    //   const res = await axios.get(`${BACKEND}/generate-invite`); // Porpably do not need ti
-    //   setInviteLink(generateRandomString(10));
-    //   message.success("Invite generated");
-    // } catch (e: any) {
-    //   message.error(e.message);
-    // }
     setLoadingInvite(false);
   };
 
-  const openDrawer = (user: TelegramUser) => {
-    setSelectedUser(user);
+  const openDrawer =  async (user: TelegramUser) => {
+    const chats = await fetchUserChats(user.id);
+
+      setSelectedUser({
+    ...user,
+    chats, // ✅ attach chats here
+  });
+
+   console.log("Opening drawer for user:", user);
+   console.log("User chats:", chats);
+   console.log("Selected user after attaching chats:", {
+    ...user,
+    chats,
+   });
+
     setDrawerVisible(true);
   };
+
+
   const closeDrawer = () => {
     setDrawerVisible(false);
     setSelectedUser(null);
@@ -232,7 +377,8 @@ const AdminDashboard: React.FC = () => {
       user.first_name.toLowerCase().includes(text) ||
       (user.last_name?.toLowerCase().includes(text) ?? false) ||
       (user.user_name?.toLowerCase().includes(text) ?? false) ||
-      (user.email?.toLowerCase().includes(text) ?? false)
+      (user.email?.toLowerCase().includes(text) ?? false) ||
+      (user.status?.toLowerCase().includes(text) ?? false)
     );
   });
 
@@ -263,18 +409,19 @@ const handleAddUser = async (values: any) => {
       if (userError) throw userError;
 
       // 2️⃣ Insert relation into chat_members
-      const { error: memberError } = await supabase
-        .from("chat_members")
-        .insert([
-          {
+      if (chat_id && chat_id.length > 0) {
+        const rows = chat_id.map((cid: string) => ({
             user_id: users.id,
-            chat_id: chat_id,
-            is_member_active: "pending",
-          },
-        ]);
+            chat_id: cid,
+            is_member_active: "invided",
+          }));
 
-      if (memberError) throw memberError;
+          const { error: memberError } = await supabase
+            .from("chat_members")
+            .insert(rows);
 
+        if (memberError) throw memberError;
+      }
       message.success("User added to chat successfully");
     } catch (err: any) {
       message.error(err.message);
@@ -318,29 +465,21 @@ const handleAddUser = async (values: any) => {
         breakpoint="lg"
         collapsedWidth={80}
         theme="light"
-        width={280}
+        width={250}
         collapsed={collapsed}
         onCollapse={(val) => setCollapsed(val)}
-        style={{
-          padding: 16,
-          //background: "linear-gradient(180deg, #1890ff 0%, #40a9ff 100%)",
-        }}
+        // style={{
+        //   padding: 16,
+        // }}
       >
-        <div
-          style={{
-            height: 64,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontWeight: 700,
-            fontSize: 20,
-            marginBottom: 24,
-            textShadow: "1px 1px 4px rgba(0,0,0,0.3)",
-          }}
-        >
-          Admin Panel
-        </div>
+      <Divider>
+        <Button
+          danger
+          icon={<LogoutOutlined />}
+          shape="round"
+          onClick={onLogout}
+        />
+      </Divider>
 
         {/* Sidebar Menu */}
         <Menu
@@ -352,7 +491,7 @@ const handleAddUser = async (values: any) => {
           items={[
             { key: "users", icon: <TeamOutlined />, label: "Users" },
             { key: "invites", icon: <LinkOutlined />, label: "Invites" },
-            { key: "bot", icon: <UserOutlined />, label: "Bot Chat" },
+            { key: "bot", icon: <RobotOutlined />, label: "Bot Chat" },
           ]}
           style={{ borderRadius: 12, overflow: "hidden" }}
         />
@@ -360,12 +499,11 @@ const handleAddUser = async (values: any) => {
 
       {/* Main */}
       <Layout>
-        <Header
+        {/* <Header
           style={{
             position: "sticky",
             top: 0,
             zIndex: 1,
-            //background: "#fff",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -385,37 +523,52 @@ const handleAddUser = async (values: any) => {
           >
             Logout
           </Button>
-        </Header>
+        </Header> */}
 
         <Content
           style={{
             padding: 24,
             overflow: "auto",
-            //background: "#f0f2f5",
           }}
           onScroll={onScroll}
         >
-          {selectedMenu === "users" && (
-            <>
-              {/* Filter + Add User next to each other */}
-              <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Input.Search
-                  placeholder="Search by name, username, or email"
-                  allowClear
-                  enterButton
-                  onSearch={(value) => setSearchText(value)}
-                  style={{ flex: 1, minWidth: 200, borderRadius: 8 }}
-                />
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => setAddModalVisible(true)}
+        
+        {selectedMenu === "users" && (
+          <>
+           {/* Chat selector + Filter + Add User Section */}
+              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                {/* Chat dropdown */}
+                <Select
+                  placeholder="Select a chat"
+                  style={{ width: "100%" }}
+                  value={selectedChatId}
+                  onChange={(value) => setSelectedChatId(value)}
                 >
-                  Add User
-                </Button>
-                <Button onClick={() => setSearchText("")}>Clear</Button>
-              </div>
+                  <Select.Option key="all" value="all">
+                    All members
+                  </Select.Option>
+                  {botChats.map((chat) => (
+                    <Select.Option key={chat.chat_id} value={chat.chat_id}>
+                      {chat.chat_name}
+                    </Select.Option>
+                  ))}
+                </Select>
 
+                {/* Search + Buttons inline */}
+                <Space style={{ width: "100%" }} size="middle">
+                  <Input.Search
+                    placeholder="Search by name, username, or email"
+                    allowClear
+                    enterButton
+                    onSearch={(value) => setSearchText(value)}
+                    style={{ flex: 1, borderRadius: 8 }}
+                  />
+                  <Button onClick={() => setSearchText("")}>Clear</Button>
+                </Space>
+              </Space>
+              <FloatButton onClick={() => setAddModalVisible(true)} icon={<UserAddOutlined />} />
+              <Divider dashed>{selectedChatId === "all" ? "All members" : botChats.find(chat => chat.chat_id === selectedChatId)?.chat_name}</Divider>
+              {/* Users list */}
               <List
                 dataSource={filteredUsers}
                 renderItem={(user) => (
@@ -427,7 +580,6 @@ const handleAddUser = async (values: any) => {
                       transition: "all 0.3s ease",
                       marginBottom: 12,
                       borderRadius: 12,
-                      //background: "#fff",
                       padding: 16,
                       boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
                     }}
@@ -435,20 +587,60 @@ const handleAddUser = async (values: any) => {
                   >
                     <List.Item.Meta
                       avatar={<Avatar style={{ backgroundColor: "#1890ff" }}>{user.first_name[0]}</Avatar>}
-                      title={user.user_name || user.first_name}
-                      description={user.email}
+                      title={user.first_name + (user.last_name ? ` ${user.last_name}` : "")}
+                      description={
+                        <>
+                          <div>
+                            {selectedChatId !== "all" ? (
+                                <>
+                                  <b>Is Active:</b>{" "}
+                                  <Tag color={user.is_member_active === "invited" ? "gold" : "green"}>
+                                    {user.is_member_active || "unknown"}
+                                  </Tag>
+                                </>
+                              ) : (
+                                <>
+                                  <b>Status:</b>{" "}
+                                  <Tag color={user.status === "verified" ? "green" : "gold"}>
+                                    {user.status || "unknown"}
+                                  </Tag>
+                                </>
+                              )}
+                          </div>
+                        </>
+                      }
                     />
+                    {selectedChatId !== "all" && user.is_member_active === "active" && (
+                      <Button
+                        size="small"
+                        color='red'
+                        variant="filled"
+                        onClick={() => removeUserFromChat(selectedChatId, user.telegram_id!)}
+                      >
+                        Ban member
+                      </Button>)}
+
+                    {selectedChatId !== "all" && user.is_member_active === "inactive" && (
+                    <Button
+                      color='cyan'
+                      size="small"
+                      variant='filled'
+                      onClick={() => inviteUserToChat(selectedChatId, user.telegram_id!)}
+                      >
+                        Invite
+                      </Button>)}
+
                   </List.Item>
                 )}
               />
 
-              {loading && (
-                <div style={{ textAlign: "center", padding: 24 }}>
-                  <Spin />
-                </div>
-              )}
-            </>
-          )}
+            {loading && (
+              <div style={{ textAlign: "center", padding: 24 }}>
+                <Spin />
+              </div>
+            )}
+          </>
+        )}
 
           {selectedMenu === "invites" && (
             <>
@@ -524,8 +716,9 @@ const handleAddUser = async (values: any) => {
 
         </Content>
       </Layout>
+      
 
-      {/* Drawer */}
+      {/* Drawer User*/}
       <Drawer
         title={selectedUser?.user_name || selectedUser?.first_name}
         placement="right"
@@ -578,6 +771,72 @@ const handleAddUser = async (values: any) => {
             </Text>
           </div>
         )}
+
+           <Divider>Member of chats</Divider>
+
+            <List
+              size="small"
+              dataSource={memberChats}
+              locale={{ emptyText: "Not a member of any chat" }}
+              renderItem={(chat) => {
+                const status = selectedUser?.chats?.find(c => c.chat_id === chat.chat_id);
+
+                return (
+                  <List.Item>
+                    <Space>
+                      <b>{chat.chat_name}</b>
+                      <Tag color={status?.is_member_active === "active" ? "green" : "gold"}>
+                        {status?.is_member_active}
+                      </Tag>
+                    </Space>
+                  </List.Item>
+                );
+              }}
+            />
+
+            <Divider>Invite to chat</Divider>
+
+          {nonMemberChats.length === 0 ? ( // TODO: if status pending infor 
+            <Text type="secondary">User is already in all chats</Text>
+          ) : (
+            <><Select
+              status={selectedUser?.status === "verified" ? "" : "error"}
+              mode="multiple"
+              disabled={selectedUser?.status !== "verified"}
+              placeholder={selectedUser?.status === "verified" ? "Select chats to invite" : "User must be verified."}
+              style={{ width: "100%" }}
+              onChange={(chatIds) => setInviteChatIds(chatIds)}
+            >
+              {nonMemberChats.map(chat => (
+                <Select.Option key={chat.chat_id} value={chat.chat_id}>
+                  {chat.chat_name}
+                </Select.Option>
+              ))}
+            </Select>
+            <Button 
+            icon={<SendOutlined />}
+            style={{
+              marginTop: 12,
+            }}
+              type="primary"
+              block
+              disabled={!inviteChatIds?.length}
+              onClick={() => console.log("Cal API")} // TODO: implement invite API call
+              // onClick={() => {
+              //   inviteChatIds.forEach(async (chatId) => {
+              //     try {
+              //       await inviteUserToChat(Number(chatId), selectedUser.id);
+              //       message.success(`User invited to chat ${chatId}`);
+              //     } catch (err: any) {
+              //       message.error(`Failed to invite to chat ${chatId}: ${err.message}`);
+              //     }
+              //   });
+              // }}
+            >
+                Send Invites
+              </Button></>
+            
+          )}
       </Drawer>
 
       {/* Add/Edit User Modal */}
@@ -618,53 +877,58 @@ const handleAddUser = async (values: any) => {
             <Input />
           </Form.Item>
 
-          <Form.Item
-            name="chat_id"
-            label="Chat Name"
-            rules={[{ required: true, message: "Please select a chat!" }]}
-          >
-            {loadingBotChats ? (
-              <Spin />
-            ) : (
-              <Select placeholder="Select a chat">
-                {botChats.map((chat) => (
-                  <Select.Option key={chat.id} value={chat.chat_id}>
-                    {chat.chat_name}
-                  </Select.Option>
-                ))}
-              </Select>
-            )}
-          </Form.Item>
-
+          {!selectedUser && ( // Maby not to invate then adding new user. Maby add after user is verified
+            <Form.Item
+              name="chat_id"
+              label="Chats"
+              tooltip="Optionally select chats to add user to after verification"
+              //rules={[{ required: true, message: "Please select a chat!" }]}
+            >
+              {loadingBotChats ? (
+                <Spin />
+              ) : (
+                <Select mode="multiple"   
+                        placeholder="Select one or more chats"
+                        allowClear
+                >
+                  {botChats.map((chat) => (
+                    <Select.Option key={chat.id} value={chat.chat_id}>
+                      {chat.chat_name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              )}
+            </Form.Item>
+          )}
           {/* INVITE SECTION */}
           {!selectedUser && (
             <>
               <Divider orientation="left">Activation Code</Divider>
 
-                <Form.Item name="activation_code" style={{ display: 'none' }}>
+                <Form.Item name="activation_code" style={{ display: 'none' }}  rules={[{ required: true }]}>
                   <Input />
                 </Form.Item>
 
-              <Space direction="vertical" style={{ width: "100%" }}>
-                <Button
-                  icon={<LinkOutlined />}
-                  loading={loadingInvite}
-                  onClick={generateInvite}
-                >
-                  Generate Activation Code
-                </Button>
+              <Space direction="horizontal" style={{ width: "100%" }}>
 
-                {inviteLink && (
                   <Input.TextArea
+                  required={true}
                     value={inviteLink}
                     readOnly
                     autoSize
-                    onClick={(e) => {
+                    onClick={() => {
                       navigator.clipboard.writeText(inviteLink);
                       message.success("Invite link copied");
                     }}
                   />
-                )}
+      
+                 <Button
+                  icon={<LinkOutlined />}
+                  loading={loadingInvite}
+                  onClick={generateActivationCode}
+                >
+                  Generate Activation Code
+                </Button>
               </Space>
             </>
           )}
