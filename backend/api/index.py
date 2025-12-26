@@ -25,7 +25,7 @@ app = FastAPI()
 
 # Allow your frontend to access the backend
 origins = [
-    "quovipapi.vercel.ap",  # your frontend URL
+    "https://quovipapi.vercel.ap",  # your frontend URL
     "http://127.0.0.1:5173",  # optional, if you use this
     "*",  # optional: allow all origins (not recommended in production)
 ]

@@ -208,6 +208,7 @@ const fetchChatMembers = async (chatId: string) => {
         first_name,
         last_name,
         user_name,
+        telegram_id,
         email,
         status,
         created_at
@@ -300,12 +301,19 @@ const fetchChatMembers = async (chatId: string) => {
       throw new Error(error.detail || "Failed to invite user");
     }
 
-    return res.json();
+    const data = await res.json();
+    if(!data.ok) {
+      message.error("Failed to invite user: " + data.message);
+      setInviteChatIds([]);
+    } else {
+      message.success("Invitation sent successfully");
+    }
   };
 
   // Remove user from chat API call
   const removeUserFromChat = async (chatId: string, userId: string) => {
-  const res = await fetch(`${BACKEND_URL}/api/chats/remove-user`, {
+    console.log(`Removing user ${userId} from chat ${chatId}`);
+  const res = await fetch(`https://${BACKEND_URL}/api/chats/remove-user`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -319,7 +327,13 @@ const fetchChatMembers = async (chatId: string) => {
       return message.error(error.detail || "Failed to remove user");
     }
 
-  return res.json();
+  const data = await res.json();
+  if(!data.ok) {
+    message.error("Failed to remove user: " + data.message);
+  } else {
+    message.success("User removed successfully");
+  }
+  return data;
 };
 
   // Fetch data on menu change
@@ -394,7 +408,9 @@ const fetchChatMembers = async (chatId: string) => {
       (user.last_name?.toLowerCase().includes(text) ?? false) ||
       (user.user_name?.toLowerCase().includes(text) ?? false) ||
       (user.email?.toLowerCase().includes(text) ?? false) ||
-      (user.status?.toLowerCase().includes(text) ?? false)
+      (user.status?.toLowerCase().includes(text) ?? false) ||
+      (user.user_id?.toLowerCase().includes(text) ?? false) ||
+      (user.telegram_id?.toLowerCase().includes(text) ?? false)
     );
   });
 
@@ -588,15 +604,6 @@ const handleAddUser = async (values: any) => {
                         </>
                       }
                     />
-                    {selectedChatId !== "all" && user.is_member_active === "active" && (
-                      <Button
-                        size="small"
-                        color='red'
-                        variant="filled"
-                        onClick={() => removeUserFromChat(selectedChatId, user.telegram_id!)}
-                      >
-                        Ban member
-                      </Button>)}
                   </List.Item>
                 )}
               />
@@ -756,6 +763,13 @@ const handleAddUser = async (values: any) => {
                         {status?.is_member_active}
                       </Tag>
                     </Space>
+                    {status?.is_member_active === "active" && (
+                    <Button
+                      size="small"
+                      danger
+                       onClick={() => removeUserFromChat(chat.chat_id, selectedUser?.telegram_id!)}
+                       >Ban user</Button>
+                    )}
                   </List.Item>
                 );
               }}
@@ -769,6 +783,7 @@ const handleAddUser = async (values: any) => {
             <><Select
               status={selectedUser?.status === "verified" ? "" : "error"}
               mode="multiple"
+              value={inviteChatIds}
               disabled={selectedUser?.status !== "verified"}
               placeholder={selectedUser?.status === "verified" ? "Select chats to invite" : "User must be verified."}
               style={{ width: "100%" }}
@@ -790,13 +805,7 @@ const handleAddUser = async (values: any) => {
               disabled={!inviteChatIds?.length}
               onClick={() => {
                 inviteChatIds.forEach(async (chatId) => {
-                  try {
-                    console.log(`Inviting user ${selectedUser?.telegram_id} to chat ${chatId}`);
                     await inviteUserToChat(chatId, selectedUser?.telegram_id!);
-                    message.success(`User invited to chat ${chatId}`);
-                  } catch (err: any) {
-                    message.error(`Failed to invite to chat ${chatId}: ${err.message}`);
-                  }
                 });
               }}
             >
