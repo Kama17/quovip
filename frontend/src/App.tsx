@@ -13,7 +13,7 @@ const MyApp: React.FC = () => (
   <ConfigProvider
     theme={{
       algorithm: darkAlgorithm,
-      token: { colorPrimary: "#0088cc", borderRadius: 6 },
+      //token: { colorPrimary: "#0088cc", borderRadius: 6 },
     }}
   >
     <App>

@@ -13,6 +13,7 @@ from telegram.ext import (
     filters,
 )
 from supabase import create_client
+from learing.learing import send_learning_guide, lesson_callback
 
 # --------------------
 # Load env
@@ -35,7 +36,16 @@ ASK_USER_ID, ASK_PIN = range(2)
 # Handlers
 # --------------------
 async def start_verify(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Please provide your user ID:")
+    await update.message.reply_text(
+        "👋 <b>Welcome to the Verification Process!</b>\n\n"
+        "To get access to our private trading chats, please follow these steps:\n\n"
+        "1️⃣ Provide your <b>User ID</b>.\n"
+        "2️⃣ Enter the <b>verification code</b> sent to you by the admin.\n"
+        "3️⃣ Once verified, you'll be added to the appropriate trading groups.\n\n"
+        "Let's get started!\n\n"
+        "Please provide your <b>User ID</b> to begin:",
+        parse_mode="HTML"
+    )
     return ASK_USER_ID
 
 async def ask_user_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -44,14 +54,27 @@ async def ask_user_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     response = supabase.table("users").select("*").eq("user_id", user_id_input).execute()
     user = response.data[0] if response.data else None
 
-    if not user or user.get("status") != "pending":
-        await update.message.reply_text("❌ Invalid or already verified user ID.")
+    if not user: 
+        await update.message.reply_text(
+            "❌ <b>User ID not found</b>.\n\n"
+            "Please check your ID and try again.",
+            parse_mode="HTML"
+        )
+        return ConversationHandler.END
+    if user.get("status") == "verified":
+        await update.message.reply_text(
+            "✅ <b>You are already verified!</b>\n\n"
+            "No further action is needed.",
+            parse_mode="HTML")
         return ConversationHandler.END
 
     ctx.user_data["user_id"] = user_id_input
     ctx.user_data["user_record"] = user
 
-    await update.message.reply_text("Please provide your verification code:")
+    await update.message.reply_text(
+         "🔐 <b>Almost there!</b>\n"
+        "Please provide your <b>verification code</b> sent by the admin to complete verification.",
+        parse_mode="HTML")
     return ASK_PIN
 
 async def ask_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,16 +88,29 @@ async def ask_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_record = response.data[0] if response.data else None
 
     if not user_record:
-        await update.message.reply_text("❌ User not found.")
+        await update.message.reply_text(
+            "❌ <b>User not found</b>\n\n"
+            "🔍 We couldn't find your account in our system.\n"
+            "👉 Please make sure you joined using the correct ID.",
+            parse_mode="HTML"
+        )
         return ConversationHandler.END
 
     if str(user_record.get("activation_code")) != pin_input:
-        await update.message.reply_text("❌ Invalid PIN.")
+        await update.message.reply_text(
+            "❌ <b>Invalid PIN</b>\n\n"
+            "🔐 The PIN you entered is incorrect.\n",
+            parse_mode="HTML"
+        )
         return ConversationHandler.END
 
-    # Send invite link
-    invite_link = user_record.get("invite_link")
-    await update.message.reply_text(f"✅ Verified! Here is your chat invite link:\n{invite_link}")
+    await update.message.reply_text(
+        f"😊 <b>Welcome, {update.effective_user.first_name}!</b>\n\n"
+        "✅ You’re all verified\n"
+        "📊 Invite links to our <b>private trading groups</b> are coming your way soon.\n\n"
+        "🚀 Excited to have you with us!",
+        parse_mode="HTML"
+    )
 
     # Update user as verified and store Telegram ID
     supabase.table("users").update({
@@ -161,7 +197,18 @@ async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             .eq("chat_id", chat.id) \
             .execute()
 
-        await ctx.bot.send_message(user.id, f"👋 Welcome to {chat.title}, {user.first_name}!")
+        message = (
+            f"👋 <b>Welcome to <u>{chat.title}</u>!</b>\n\n"
+            f"😊 Hi <b>{user.first_name}</b>, we’re glad to have you here.\n\n"
+            "📌 <i>Please read the pinned message and follow the group rules.</i>\n"
+            "🤝 Be respectful and enjoy your stay!"
+            )
+
+        await ctx.bot.send_message(
+            chat_id=user.id,
+            text=message,
+            parse_mode="HTML"
+        )
 
     # --------------------
     # USER LEAVE
@@ -190,6 +237,38 @@ async def inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.inline_query.answer(results, cache_time=0)
 
+async def help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+       "👋 <b>Welcome to the community!</b>\n\n"
+        "Getting access is easy 👇\n\n"
+        "1️⃣ Type <code>/start</code> to begin verification\n"
+        "2️⃣ Send the <b>activation code</b> you received from an admin\n"
+        "3️⃣ We’ll verify you automatically ✅\n"
+        "4️⃣ An admin will add you to the right <b>private trading chats</b>\n\n"
+        "📈 All chats are private and trading-focused\n"
+        "⏱ Verification usually takes only a minute\n\n"
+        "🚀 See you inside!"
+    )
+    await update.message.reply_text(help_text, parse_mode="HTML")
+
+async def about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    about_text = (
+        "<b>🌟 About Us</b>\n\n"
+        "Welcome to our Trading Learning Community! 📈\n\n"
+        "We are a group of traders and enthusiasts dedicated to learning, sharing knowledge, and improving trading skills together.\n\n"
+        "Here you can:\n"
+        "✅ Learn trading strategies\n"
+        "✅ Share insights and tips\n"
+        "✅ Connect with like-minded members\n\n"
+        "Our goal is to create a friendly and supportive environment where everyone can grow as a trader. 🚀\n\n"
+        "<b>📬 Contact Us</b>\n"
+        "For any questions or support, reach out to our admins:\n"
+        "✉ Email: support@tradingcommunity.com\n"
+        "💬 Telegram: @TradingAdmin\n"
+        "🌐 Website: https://tradingcommunity.com"
+    )
+    await update.message.reply_text(about_text, parse_mode="HTML")
+
 # --------------------
 # MAIN
 # --------------------
@@ -197,7 +276,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start_verify)],
+        entry_points=[CommandHandler("verify", start_verify)],
         states={
             ASK_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_user_id)],
             ASK_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_pin)],
@@ -208,6 +287,10 @@ def main():
     app.add_handler(conv)
     app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
+    app.add_handler(CommandHandler("help", help))
+    app.add_handler(CommandHandler("about", about))
+    app.add_handler(CommandHandler("learn", send_learning_guide))
+    app.add_handler(CallbackQueryHandler(lesson_callback))
     app.add_handler(InlineQueryHandler(inline_query))
 
     print("🤖 Bot running (PTB v20+, polling)...")

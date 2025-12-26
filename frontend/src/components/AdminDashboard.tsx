@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import {
   Layout,
-  Menu,
   Typography,
   Button,
   Input,
@@ -30,12 +29,17 @@ import {
   SendOutlined,
   RobotOutlined,
   UserAddOutlined,
+  CloseOutlined,
+  MoreOutlined,
+  WechatOutlined,
+  QuestionCircleOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 //import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 
-const { Sider, Content } = Layout;
+const { Content } = Layout;
 const { Text } = Typography;
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 const PAGE_SIZE = 20;
@@ -51,6 +55,7 @@ const supabase = createClient(
 
 type UserChatInfo = {
   chat_id: string;
+  chat_name: string;
   is_member_active: "active" | "pending";
 };
 
@@ -74,7 +79,6 @@ type MenuKey = "users" | "invites" | "bot";
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [selectedMenu, setSelectedMenu] = useState<MenuKey>("users");
-  const [collapsed, setCollapsed] = useState(false);
 
   const [users, setUsers] = useState<TelegramUser[]>([]);
   const [page, setPage] = useState(0);
@@ -84,7 +88,8 @@ const AdminDashboard: React.FC = () => {
   const [inviteLink, setInviteLink] = useState("");
   const [loadingInvite, setLoadingInvite] = useState(false);
 
-  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [drawerUserVisible, setDrawerUserVisible] = useState(false);
+  const [drawerChatVisible, setDrawerChatVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<TelegramUser | null>(null);
 
   const [searchText, setSearchText] = useState("");
@@ -110,7 +115,8 @@ const AdminDashboard: React.FC = () => {
   const [loadingBotChats, setLoadingBotChats] = useState(false);
   const [botChats, setBotChats] = useState<any[]>([]);
 
-  const onLogout = () => navigate("/admin/login", { replace: true });
+  const onLogout = () => {
+    navigate("/admin/login", { replace: true })};
 
   // Separate chats into member and non-member based on selected user
   const memberChatIds = new Set(
@@ -179,7 +185,14 @@ const AdminDashboard: React.FC = () => {
       return [];
     }
 
-    return data ?? [];
+    // Flatten the nested structure to match UserChatInfo type
+    const flattened = (data ?? []).map((item: any) => ({
+      chat_id: item.chat_id,
+      chat_name: item.bot_chats?.[0]?.chat_name || "",
+      is_member_active: item.is_member_active,
+    }));
+
+    return flattened;
   };
 
 
@@ -268,19 +281,22 @@ const fetchChatMembers = async (chatId: string) => {
 
   // Invite user to chat
   const inviteUserToChat = async (chatId: string, userId: string) => {
-    const res = await fetch(`${BACKEND_URL}/api/chats/invite-user`, {
+    console.log("env variables:", BACKEND_URL, ADMIN_JWT_TOKEN);
+    console.log(`Inviting user ${userId} to chat ${chatId}`);
+    const res = await fetch(`https://${BACKEND_URL}/api/chats/sent-invitation`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${ADMIN_JWT_TOKEN}`
       },
-      body: JSON.stringify({ chat_id: chatId, telegram_user_id: userId })
+      body: JSON.stringify({ chat_id: chatId, telegram_user_id: userId})
 
       
     });
 
     if (!res.ok) {
       const error = await res.json();
+      console.log("Failed to invite user:", error);
       throw new Error(error.detail || "Failed to invite user");
     }
 
@@ -300,7 +316,7 @@ const fetchChatMembers = async (chatId: string) => {
 
     if (!res.ok) {
       const error = await res.json();
-      throw new Error(error.detail || "Failed to remove user");
+      return message.error(error.detail || "Failed to remove user");
     }
 
   return res.json();
@@ -357,12 +373,12 @@ const fetchChatMembers = async (chatId: string) => {
     chats,
    });
 
-    setDrawerVisible(true);
+    setDrawerUserVisible(true);
   };
 
 
-  const closeDrawer = () => {
-    setDrawerVisible(false);
+  const closeUserDrawer = () => {
+    setDrawerUserVisible(false);
     setSelectedUser(null);
   };
 
@@ -429,7 +445,7 @@ const handleAddUser = async (values: any) => {
     }
 
     setAddModalVisible(false);
-    setDrawerVisible(false);
+    setDrawerUserVisible(false);
     setSelectedUser(null);
     setInviteLink("");
     form.resetFields();
@@ -450,7 +466,7 @@ const handleAddUser = async (values: any) => {
       if (error) throw error;
       message.success("User deleted successfully");
       setDeleteModalVisible(false);
-      setDrawerVisible(false);
+      setDrawerUserVisible(false);
       refreshUsers();
     } catch (err: any) {
       message.error(err.message);
@@ -459,71 +475,55 @@ const handleAddUser = async (values: any) => {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      {/* Sidebar */}
-      <Sider
-        collapsible
-        breakpoint="lg"
-        collapsedWidth={80}
-        theme="light"
-        width={250}
-        collapsed={collapsed}
-        onCollapse={(val) => setCollapsed(val)}
-        // style={{
-        //   padding: 16,
-        // }}
-      >
-      <Divider>
-        <Button
-          danger
-          icon={<LogoutOutlined />}
-          shape="round"
-          onClick={onLogout}
-        />
-      </Divider>
-
-        {/* Sidebar Menu */}
-        <Menu
-          theme="light"
-          mode="inline"
-          inlineCollapsed={collapsed}
-          selectedKeys={[selectedMenu]}
-          onClick={(e) => setSelectedMenu(e.key as MenuKey)}
-          items={[
-            { key: "users", icon: <TeamOutlined />, label: "Users" },
-            { key: "invites", icon: <LinkOutlined />, label: "Invites" },
-            { key: "bot", icon: <RobotOutlined />, label: "Bot Chat" },
-          ]}
-          style={{ borderRadius: 12, overflow: "hidden" }}
-        />
-      </Sider>
-
-      {/* Main */}
-      <Layout>
-        {/* <Header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 1,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            paddingInline: 24,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-            borderBottomLeftRadius: 12,
-            borderBottomRightRadius: 12,
-          }}
+     
+        <FloatButton.Group
+          icon={<MoreOutlined />}
+          closeIcon={<CloseOutlined />}
+          trigger="click"
         >
-          <Title level={4} style={{ margin: 0 }}>
-            Admin Dashboard
-          </Title>
-          <Button
-            icon={<LogoutOutlined />}
-            style={{ fontWeight: 600 }}
-            onClick={onLogout}
+          <Popconfirm
+            icon={<QuestionCircleOutlined style={{ color: 'red' }} />}
+            title="Logout?"
+            description="Are you sure you want to logout?"
+            onConfirm={onLogout}
+            okText="Yes"
+            cancelText="No"
           >
-            Logout
-          </Button>
-        </Header> */}
+            <FloatButton
+              icon={<LogoutOutlined style={{ color: 'red' }} />}
+            />
+          </Popconfirm>
+          <FloatButton
+              icon={<TeamOutlined />}
+              //description="Users"
+              onClick={() => setSelectedMenu("users")}
+            />
+             <FloatButton
+              icon={<AuditOutlined />}
+              //description="Invites"
+              onClick={() => setSelectedMenu("invites")}
+            />
+             <FloatButton
+              icon={<RobotOutlined />}
+              //description="Bot"
+              onClick={() => setSelectedMenu("bot")}
+            />
+            <FloatButton 
+              //description="Add User"
+              icon={<UserAddOutlined />}
+              onClick={() => setAddModalVisible(true)} />
+        </FloatButton.Group>
+
+        {selectedMenu === "users" && (
+          <FloatButton 
+          style={{insetInlineEnd: 90}}
+          //description="Chats"
+          icon={<WechatOutlined />}
+          onClick={() => setDrawerChatVisible(true)} />
+        )}
+
+
+      <Layout>
 
         <Content
           style={{
@@ -535,42 +535,20 @@ const handleAddUser = async (values: any) => {
         
         {selectedMenu === "users" && (
           <>
-           {/* Chat selector + Filter + Add User Section */}
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                {/* Chat dropdown */}
-                <Select
-                  placeholder="Select a chat"
-                  style={{ width: "100%" }}
-                  value={selectedChatId}
-                  onChange={(value) => setSelectedChatId(value)}
-                >
-                  <Select.Option key="all" value="all">
-                    All members
-                  </Select.Option>
-                  {botChats.map((chat) => (
-                    <Select.Option key={chat.chat_id} value={chat.chat_id}>
-                      {chat.chat_name}
-                    </Select.Option>
-                  ))}
-                </Select>
-
-                {/* Search + Buttons inline */}
-                <Space style={{ width: "100%" }} size="middle">
-                  <Input.Search
-                    placeholder="Search by name, username, or email"
-                    allowClear
-                    enterButton
-                    onSearch={(value) => setSearchText(value)}
-                    style={{ flex: 1, borderRadius: 8 }}
-                  />
-                  <Button onClick={() => setSearchText("")}>Clear</Button>
-                </Space>
-              </Space>
-              <FloatButton onClick={() => setAddModalVisible(true)} icon={<UserAddOutlined />} />
               <Divider dashed>{selectedChatId === "all" ? "All members" : botChats.find(chat => chat.chat_id === selectedChatId)?.chat_name}</Divider>
               {/* Users list */}
               <List
                 dataSource={filteredUsers}
+                header={
+                  <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                    <Input.Search
+                      placeholder="Search"
+                      allowClear
+                      onClear={() => setSearchText("")}
+                      onSearch={(value) => setSearchText(value)}
+                    />
+                  </Space>
+                }
                 renderItem={(user) => (
                   <List.Item
                     key={user.id}
@@ -619,17 +597,6 @@ const handleAddUser = async (values: any) => {
                       >
                         Ban member
                       </Button>)}
-
-                    {selectedChatId !== "all" && user.is_member_active === "inactive" && (
-                    <Button
-                      color='cyan'
-                      size="small"
-                      variant='filled'
-                      onClick={() => inviteUserToChat(selectedChatId, user.telegram_id!)}
-                      >
-                        Invite
-                      </Button>)}
-
                   </List.Item>
                 )}
               />
@@ -722,8 +689,8 @@ const handleAddUser = async (values: any) => {
       <Drawer
         title={selectedUser?.user_name || selectedUser?.first_name}
         placement="right"
-        onClose={closeDrawer}
-        visible={drawerVisible}
+        onClose={closeUserDrawer}
+        open={drawerUserVisible}
         width={360}
         footer={
           <div
@@ -737,7 +704,7 @@ const handleAddUser = async (values: any) => {
               type="primary"
               icon={<EditOutlined />}
               onClick={() => {
-                setDrawerVisible(false);
+                setDrawerUserVisible(false);
                 setAddModalVisible(true);
                 form.setFieldsValue(selectedUser);
               }}
@@ -748,7 +715,7 @@ const handleAddUser = async (values: any) => {
               danger
               icon={<DeleteOutlined />}
               onClick={() => {
-                setDrawerVisible(false);
+                setDrawerUserVisible(false);
                 setDeleteModalVisible(true);
               }}
             >
@@ -767,7 +734,7 @@ const handleAddUser = async (values: any) => {
               <b>Email:</b> {selectedUser.email || "—"}
             </Text>
             <Text>
-              <b>User ID:</b> {selectedUser.id}
+              <b>User ID:</b> {selectedUser.user_id}
             </Text>
           </div>
         )}
@@ -821,23 +788,60 @@ const handleAddUser = async (values: any) => {
               type="primary"
               block
               disabled={!inviteChatIds?.length}
-              onClick={() => console.log("Cal API")} // TODO: implement invite API call
-              // onClick={() => {
-              //   inviteChatIds.forEach(async (chatId) => {
-              //     try {
-              //       await inviteUserToChat(Number(chatId), selectedUser.id);
-              //       message.success(`User invited to chat ${chatId}`);
-              //     } catch (err: any) {
-              //       message.error(`Failed to invite to chat ${chatId}: ${err.message}`);
-              //     }
-              //   });
-              // }}
+              onClick={() => {
+                inviteChatIds.forEach(async (chatId) => {
+                  try {
+                    console.log(`Inviting user ${selectedUser?.telegram_id} to chat ${chatId}`);
+                    await inviteUserToChat(chatId, selectedUser?.telegram_id!);
+                    message.success(`User invited to chat ${chatId}`);
+                  } catch (err: any) {
+                    message.error(`Failed to invite to chat ${chatId}: ${err.message}`);
+                  }
+                });
+              }}
             >
                 Send Invites
               </Button></>
             
           )}
       </Drawer>
+
+      {/* Drawer chats */}
+      <Drawer
+        title="Telegram Chats"
+        placement="right"
+        onClose={() => setDrawerChatVisible(false)}
+        open={drawerChatVisible}
+        width={360}
+        footer={ <List.Item
+        
+            style={{cursor: "pointer"}} 
+            onClick={() => setSelectedChatId("all")}>
+            <List.Item.Meta
+              title="All members"
+            />
+          </List.Item>}
+        >
+        {/* Chat content goes here */}
+        <List
+          dataSource={botChats}
+          renderItem={(chat) => (
+            <List.Item
+              style={{cursor: "pointer"}} 
+              onClick={() => setSelectedChatId(chat.chat_id)}
+              key={chat.id}>
+              <List.Item.Meta
+                title={chat.chat_name || "No title"}
+                description={`Chat ID: ${chat.chat_id}`}
+              />
+            </List.Item>
+          )
+        }
+        >
+        </List>
+      </Drawer>
+
+      {/* Drawer chats */}
 
       {/* Add/Edit User Modal */}
       <Modal
@@ -858,23 +862,23 @@ const handleAddUser = async (values: any) => {
           onFinish={handleAddUser}
         >
           <Form.Item name="first_name" label="First name" rules={[{ required: true }]}>
-            <Input />
+            <Input placeholder="User first name"/>
           </Form.Item>
 
           <Form.Item name="last_name" label="Last name" rules={[{ required: true }]}>
-            <Input />
+            <Input placeholder="User last name"/>
           </Form.Item>
 
-          <Form.Item name="user_name" label="Username">
-            <Input />
+          <Form.Item name="user_name" label="User Name">
+            <Input placeholder="User name"/>
           </Form.Item>
 
           <Form.Item name="email" label="Email" rules={[{ type: 'email', message: 'Please enter a valid email' }]}>
-            <Input />
+            <Input placeholder="User email"/>
           </Form.Item>
 
           <Form.Item name="user_id" label="ID" rules={[{ required: true }]}>
-            <Input />
+            <Input placeholder="User Quo ID"/>
           </Form.Item>
 
           {!selectedUser && ( // Maby not to invate then adding new user. Maby add after user is verified
