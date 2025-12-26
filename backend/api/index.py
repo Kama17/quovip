@@ -59,7 +59,7 @@ async def remove_user_endpoint(
                 "chat_id": chat_id,
                 "user_id": user_id,
             },
-            timeout=5
+            timeout=10
         )
 
     result = r.json()
@@ -87,7 +87,7 @@ async def send_invitation_endpoint(
             json={
                 "chat_id": chat_id,
             },
-            timeout=5
+            timeout=10
         )
 
     result = r.json()
