@@ -110,7 +110,7 @@ async def send_invitation_endpoint(
             "👋 See you inside!"
         )
     },
-        timeout=5
+        timeout=10
     )
 
     result2 = r2.json()
