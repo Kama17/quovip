@@ -146,14 +146,14 @@ const AdminDashboard: React.FC = () => {
       const { data, error } = await supabase
         .from("users")
         .select("*")
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+        //.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1) // need to be fixed. I does not work whn clickin on all members
         .order("created_at", { ascending: true });
 
       if (error) {
         message.error("Error fetching users: " + error.message);
       } else {
         if (!data || data.length < PAGE_SIZE) setHasMore(false);
-
+        console.log("Fetched users:", data);
         setUsers((prev) => {
           const combined = [...prev, ...(data || [])];
           const uniqueUsers = combined.filter(
@@ -240,7 +240,9 @@ const fetchChatMembers = async (chatId: string) => {
   // Fetch chat members when selected chat changes
   useEffect(() => {
     console.log("Selected chat ID changed:", selectedChatId);
-    if (selectedChatId === 'all') fetchUsers();
+    if (selectedChatId === 'all') {
+      fetchUsers();
+    }
     else fetchChatMembers(selectedChatId);
   }, [selectedChatId]);
 
@@ -540,20 +542,24 @@ const handleAddUser = async (values: any) => {
           <FloatButton
               icon={<TeamOutlined />}
               //description="Users"
+              tooltip={{title: "Users", placement: "left"}}
               onClick={() => setSelectedMenu("users")}
             />
              <FloatButton
               icon={<AuditOutlined />}
               //description="Invites"
+              tooltip={{title: "Invites", placement: "left"}}
               onClick={() => setSelectedMenu("invites")}
             />
              <FloatButton
               icon={<RobotOutlined />}
               //description="Bot"
+              tooltip={{title: "Bot Chats", placement: "left"}}
               onClick={() => setSelectedMenu("bot")}
             />
             <FloatButton 
               //description="Add User"
+              tooltip={{title: "Add User", placement: "left"}}
               icon={<UserAddOutlined />}
               onClick={() => setAddModalVisible(true)} />
         </FloatButton.Group>
@@ -569,6 +575,7 @@ const handleAddUser = async (values: any) => {
          <FloatButton 
           style={{insetInlineEnd: 90 + (selectedMenu === "users" ? 60 : 0)}}
           //description="Chats"
+          tooltip={{title: "Send Message", placement: "left"}}
           icon={<SendOutlined />}
           onClick={() => setSendMessageModalVisible(true)} />
 
