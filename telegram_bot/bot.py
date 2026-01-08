@@ -128,6 +128,41 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # --------------------
+# CHAT MIGRATION (group → supergroup)
+# --------------------
+async def chat_migration(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message:
+        return
+
+    if message.migrate_from_chat_id:
+        old_id = message.migrate_from_chat_id
+        new_id = message.chat.id
+        new_name = message.chat.title or "Unnamed chat"
+
+        exists = supabase.table("bot_chats") \
+            .select("chat_id") \
+            .eq("chat_id", new_id) \
+            .execute()
+
+        if exists.data:
+            return
+
+
+        supabase.table("bot_chats") \
+            .update({"chat_id": new_id, "chat_name": new_name}) \
+            .eq("chat_id", old_id) \
+            .execute()
+
+        supabase.table("chat_members") \
+            .update({"chat_id": new_id}) \
+            .eq("chat_id", old_id) \
+            .execute()
+
+        print(f"🔁 Chat migrated {old_id} → {new_id}")
+
+
+# --------------------
 # Chat member updates
 # --------------------
 async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -147,6 +182,7 @@ async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat = result.chat
 
     bot_id = (await ctx.bot.get_me()).id
+
 
     # --------------------
     # BOT JOIN / LEAVE
@@ -195,7 +231,9 @@ async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         supabase.table("chat_members") \
             .update({"is_member_active": "active"}) \
             .eq("chat_id", chat.id) \
+            .eq("user_id", user.id) \
             .execute()
+        print(f"👋 User joined: {user.first_name} in chat {chat.title}")
 
         message = (
             f"👋 <b>Welcome to <u>{chat.title}</u>!</b>\n\n"
@@ -287,6 +325,8 @@ def main():
     app.add_handler(conv)
     app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
+    app.add_handler(MessageHandler(filters.StatusUpdate.ALL, chat_migration))
+
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("about", about))
     app.add_handler(CommandHandler("learn", send_learning_guide))

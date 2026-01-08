@@ -120,6 +120,64 @@ async def send_invitation_endpoint(
 
     return {"ok": True, "message": f"Invitation link sent successfully to user {user_id}"}
 
+# Brockast message
+@app.post("/api/chats/broadcast-message")
+async def send_message_to_selected_chats(
+    data: dict,
+    admin=Depends(verify_admin)
+):
+    chat_ids = data.get("chat_ids")
+    text = data.get("text")
+    parse_mode = data.get("parse_mode", "HTML")
+
+    if not chat_ids or not isinstance(chat_ids, list):
+        raise HTTPException(status_code=400, detail="chat_ids must be a list")
+
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    results = []
+    success = 0
+    failed = 0
+
+    async with httpx.AsyncClient(timeout=5) as client:
+        for chat_id in chat_ids:
+            try:
+                r = await client.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": int(chat_id),
+                        "text": text,
+                        "parse_mode": parse_mode,
+                        "disable_web_page_preview": True
+                    }
+                )
+
+                result = r.json()
+
+                if result.get("ok"):
+                    success += 1
+                else:
+                    failed += 1
+                    results.append({
+                        "chat_id": chat_id,
+                        "error": result.get("description")
+                    })
+
+            except Exception as e:
+                failed += 1
+                results.append({
+                    "chat_id": chat_id,
+                    "error": str(e)
+                })
+
+    return {
+        "ok": True,
+        "sent": success,
+        "failed": failed,
+        "errors": results
+    }
+
 # need send infotation to the user
 # @app.post("/api/chats/send-message")
 

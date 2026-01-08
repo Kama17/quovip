@@ -36,6 +36,7 @@ import {
   AuditOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { SendMessageModal } from "./SendMessageModal";
 //import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 
@@ -91,6 +92,10 @@ const AdminDashboard: React.FC = () => {
   const [drawerUserVisible, setDrawerUserVisible] = useState(false);
   const [drawerChatVisible, setDrawerChatVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<TelegramUser | null>(null);
+
+  // Send message modal
+  const [sendMessageModalVisible, setSendMessageModalVisible] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   const [searchText, setSearchText] = useState("");
 
@@ -489,6 +494,29 @@ const handleAddUser = async (values: any) => {
     }
   };
 
+  const handleSend = async (messageToSend: string, chatIds: string[]) => {
+    setSendingMessage(true);
+    try {
+      await fetch(`https://${BACKEND_URL}/api/chats/broadcast-message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ADMIN_JWT_TOKEN}`,
+        },
+        body: JSON.stringify({
+          chat_ids: chatIds,
+          text: messageToSend,
+        }),
+    });
+      message.success("Message sent successfully");
+      setSendingMessage(false);
+    } catch (err) {
+      message.error("Failed to send message");
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
   return (
     <Layout style={{ minHeight: "100vh" }}>
      
@@ -538,7 +566,19 @@ const handleAddUser = async (values: any) => {
           onClick={() => setDrawerChatVisible(true)} />
         )}
 
+         <FloatButton 
+          style={{insetInlineEnd: 90 + (selectedMenu === "users" ? 60 : 0)}}
+          //description="Chats"
+          icon={<SendOutlined />}
+          onClick={() => setSendMessageModalVisible(true)} />
 
+        <SendMessageModal
+          open={sendMessageModalVisible}
+          onClose={() => setSendMessageModalVisible(false)}
+          onSend={handleSend}
+          sending={sendingMessage}
+          supabase={supabase}
+        />
       <Layout>
 
         <Content

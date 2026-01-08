@@ -1,8 +1,10 @@
 import os, jwt
+from dotenv import load_dotenv
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
+load_dotenv()
 SECRET = os.getenv("JWT_SECRET")
 
 def verify_admin(
