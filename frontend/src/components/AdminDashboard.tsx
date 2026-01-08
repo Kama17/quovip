@@ -343,7 +343,7 @@ const fetchChatMembers = async (chatId: string) => {
 
   // Fetch data on menu change
   useEffect(() => {
-    if (selectedMenu === "bot") fetchBotChats();
+    if (selectedMenu === "bot" || selectedMenu === "users") fetchBotChats();
     }, [selectedMenu]);
   
     // Fetch bot chats when add modal is opened for user addition
