@@ -1,5 +1,6 @@
 import { Modal, Form, Input, Divider, message, Select, Spin, Upload } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
+import ImgCrop from "antd-img-crop";
 import { InboxOutlined } from "@ant-design/icons";
 import { SendOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
@@ -34,6 +35,25 @@ supabase
   const [botChats, setBotChats] = useState<BotChat[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
+
+  // Image preview handler
+  const handlePreview = async (file: UploadFile) => {
+  let src = file.url as string;
+
+  if (!src && file.originFileObj) {
+    src = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file.originFileObj as File);
+      reader.onload = () => resolve(reader.result as string);
+    });
+  }
+
+  const image = new Image();
+  image.src = src;
+
+  const imgWindow = window.open(src);
+  imgWindow?.document.write(image.outerHTML);
+};
 
 
   // Fetch chats from Supabase
@@ -101,14 +121,23 @@ supabase
           />
         </Form.Item>
 
-        {/* Optional Image */}
-        <Divider orientation="left">Optional Image</Divider>
-        <Form.Item name="image">
+       {/* Optional Image */}
+      <Divider orientation="left">Optional Image</Divider>
+
+      <Form.Item name="image">
+        <ImgCrop
+          rotationSlider
+          showGrid
+          aspectSlider 
+          showReset
+        >
           <Upload.Dragger
             multiple={false}
             accept="image/*"
+            listType="picture"
             fileList={fileList}
-            beforeUpload={() => false} // prevent auto upload
+            beforeUpload={() => false} // ⛔ prevent auto upload
+            onPreview={handlePreview}
             onChange={({ fileList }) => setFileList(fileList.slice(-1))}
             maxCount={1}
           >
@@ -122,8 +151,8 @@ supabase
               Phone screenshots, JPG, PNG, etc.
             </p>
           </Upload.Dragger>
-        </Form.Item>
-
+        </ImgCrop>
+      </Form.Item>
 
         {/* Select chats */}
         <Divider orientation="left">Select Chats</Divider>

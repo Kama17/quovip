@@ -28,6 +28,7 @@
     "@types/react-dom": "^18.3.7",
     "@vkruglikov/react-telegram-web-app": "github:vkruglikov/react-telegram-web-app",
     "antd": "^5.27.6",
+    "antd-img-crop": "^4.27.0",
     "axios": "^1.13.1",
     "rc-virtual-list": "^3.19.2",
     "react": "^18.3.1",
