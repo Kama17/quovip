@@ -273,8 +273,9 @@ async def handle_user_join(user, chat, ctx):
         return
 
     # Mark active
-    supabase.table("chat_members").upsert({"chat_id": chat.id, "user_id": user_record.get("id"), "is_member_active": "active"}).execute()
-
+    active_update = supabase.table("chat_members").update({"is_member_active": "inactive"}).eq("user_id", response.data[0].get("id") if response.data else None).execute()
+    #if active_update.raise_when_api_error:
+        #print(f"Error updating member status for {user.first_name}")
     # Send welcome message
     message = (
         f"👋 <b>Welcome to <u>{chat.title}</u>!</b>\n\n"
