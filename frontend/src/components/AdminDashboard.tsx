@@ -289,9 +289,7 @@ const fetchChatMembers = async (chatId: string) => {
 
   // Invite user to chat
   const inviteUserToChat = async (chatId: string, userId: string) => {
-    console.log("env variables:", BACKEND_URL, ADMIN_JWT_TOKEN);
-    console.log(`Inviting user ${userId} to chat ${chatId}`);
-    const res = await fetch(`https://${BACKEND_URL}/api/chats/sent-invitation`, {
+    const res = await fetch(`https://${BACKEND_URL}/api/chats/send-invitation`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -496,28 +494,39 @@ const handleAddUser = async (values: any) => {
     }
   };
 
-  const handleSend = async (messageToSend: string, chatIds: string[]) => {
+  const handleSend = async (
+    messageToSend: string,
+    chatIds: string[],
+    image?: File
+  ) => {
     setSendingMessage(true);
+
     try {
+      const formData = new FormData();
+      formData.append("text", messageToSend);
+      formData.append("chat_ids", JSON.stringify(chatIds));
+
+      if (image) {
+        formData.append("image", image);
+      }
+
       await fetch(`https://${BACKEND_URL}/api/chats/broadcast-message`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${ADMIN_JWT_TOKEN}`,
         },
-        body: JSON.stringify({
-          chat_ids: chatIds,
-          text: messageToSend,
-        }),
-    });
+        body: formData,
+      });
+
       message.success("Message sent successfully");
-      setSendingMessage(false);
     } catch (err) {
+      console.error(err);
       message.error("Failed to send message");
     } finally {
       setSendingMessage(false);
     }
   };
+
 
   return (
     <Layout style={{ minHeight: "100vh" }}>

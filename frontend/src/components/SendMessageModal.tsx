@@ -1,4 +1,6 @@
-import { Modal, Form, Input, Divider, message, Select, Spin } from "antd";
+import { Modal, Form, Input, Divider, message, Select, Spin, Upload } from "antd";
+import type { UploadFile } from "antd/es/upload/interface";
+import { InboxOutlined } from "@ant-design/icons";
 import { SendOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -11,10 +13,15 @@ interface BotChat {
 interface SendMessageModalProps {
   open: boolean;
   onClose: () => void;
-  onSend: (message: string, chatIds: string[]) => Promise<void>;
+  onSend: (
+    message: string,
+    chatIds: string[],
+    image?: File
+  ) => Promise<void>;
   sending?: boolean;
   supabase: SupabaseClient;
 }
+
 
 export const SendMessageModal: React.FC<SendMessageModalProps> = ({
   open,
@@ -26,6 +33,8 @@ supabase
   const [form] = Form.useForm();
   const [botChats, setBotChats] = useState<BotChat[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+
 
   // Fetch chats from Supabase
   const fetchChats = async () => {
@@ -53,12 +62,21 @@ supabase
     try {
       const values = await form.validateFields();
       const selectedChatIds: string[] = values.chat_ids || [];
-      await onSend(values.message, selectedChatIds);
+
+      const imageFile =
+        fileList.length > 0
+          ? (fileList[0].originFileObj as File)
+          : undefined;
+
+      await onSend(values.message, selectedChatIds, imageFile);
+
       form.resetFields();
+      setFileList([]);
     } catch (err) {
       console.error(err);
     }
   };
+
 
   return (
     <Modal
@@ -82,6 +100,30 @@ supabase
             autoSize={{ minRows: 4, maxRows: 8 }}
           />
         </Form.Item>
+
+        {/* Optional Image */}
+        <Divider orientation="left">Optional Image</Divider>
+        <Form.Item name="image">
+          <Upload.Dragger
+            multiple={false}
+            accept="image/*"
+            fileList={fileList}
+            beforeUpload={() => false} // prevent auto upload
+            onChange={({ fileList }) => setFileList(fileList.slice(-1))}
+            maxCount={1}
+          >
+            <p className="ant-upload-drag-icon">
+              <InboxOutlined />
+            </p>
+            <p className="ant-upload-text">
+              Click or drag an image here (optional)
+            </p>
+            <p className="ant-upload-hint">
+              Phone screenshots, JPG, PNG, etc.
+            </p>
+          </Upload.Dragger>
+        </Form.Item>
+
 
         {/* Select chats */}
         <Divider orientation="left">Select Chats</Divider>
