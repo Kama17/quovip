@@ -162,102 +162,129 @@ async def chat_migration(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         print(f"🔁 Chat migrated {old_id} → {new_id}")
 
 
-# --------------------
-# Chat member updates
-# --------------------
 async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    print("Chat member update received:", update)
+    try:
+        print("Chat member update received:", update)
+        bot_id = (await ctx.bot.get_me()).id
 
-    # 1️⃣ BOT join/leave
-    if update.my_chat_member:
-        result = update.my_chat_member
-    # 2️⃣ USER join/leave
-    elif update.chat_member:
-        result = update.chat_member
-    else:
-        return  # nothing to do
+        # --------------------
+        # BOT join/leave (this bot)
+        # --------------------
+        if update.my_chat_member:
+            chat = update.my_chat_member.chat
+            bot_member = update.my_chat_member.new_chat_member
+            status = bot_member.status
 
-    user = result.new_chat_member.user
-    status = result.new_chat_member.status
-    chat = result.chat
+            # Only process events for this bot itself
+            if bot_member.user.id == bot_id:
+                if status in ("member", "administrator"):
+                    supabase.table("bot_chats").upsert({
+                        "chat_id": chat.id,
+                        "chat_name": chat.title
+                    }).execute()
+                    print(f"✅ Bot joined chat {chat.title} ({chat.id})")
+                elif status == "left":
+                    supabase.table("bot_chats").delete().eq("chat_id", chat.id).execute()
+                    print(f"❌ Bot left chat {chat.title} ({chat.id})")
+                return  # stop further processing for self
 
-    bot_id = (await ctx.bot.get_me()).id
+        # --------------------
+        # USER join via chat_member
+        # --------------------
+        elif update.chat_member:
+            chat = update.chat_member.chat
+            member = update.chat_member.new_chat_member
+            user = member.user
+            status = member.status
 
-
-    # --------------------
-    # BOT JOIN / LEAVE
-    # --------------------
-    if user.id == bot_id:
-        if status in ("member", "administrator"):
-            supabase.table("bot_chats").upsert({
-                "chat_id": chat.id,
-                "chat_name": chat.title
-            }).execute()
-            print(f"✅ Bot joined chat {chat.title} ({chat.id})")
-
-        elif status == "left":
-            supabase.table("bot_chats") \
-                .delete() \
-                .eq("chat_id", chat.id) \
-                .execute()
-            print(f"❌ Bot left chat {chat.title} ({chat.id})")
-
-        return
-
-    # --------------------
-    # USER JOIN
-    # --------------------
-    if status == "member":
-        response = supabase.table("users") \
-            .select("*") \
-            .eq("telegram_id", user.id) \
-            .execute()
-
-        user_record = response.data[0] if response.data else None
-
-        if not user_record or user_record.get("status") != "verified":
-            try:
-                await ctx.bot.send_message(
-                    user.id,
-                    "🚫 You were removed because your account is not verified. Please verify it first."
-                )
-            except Exception:
-                pass  # User never started the bot. but this should not be the case if user ferified with bot. If it was pending then user only was adde by admin.
-
-            await ctx.bot.ban_chat_member(chat.id, user.id)
+        # --------------------
+        # USER join via new_chat_members
+        # --------------------
+        elif update.message and update.message.new_chat_members:
+            chat = update.message.chat
+            for user in update.message.new_chat_members:
+                # Skip yourself
+                if user.id == bot_id:
+                    continue
+                # Remove other bots immediately
+                if user.is_bot:
+                    await ctx.bot.ban_chat_member(chat.id, user.id)
+                    print(f"🤖 Other bot removed: {user.first_name}")
+                    continue
+                await handle_user_join(user, chat, ctx)
             return
 
-        # Mark user as active in chat_members table
-        supabase.table("chat_members") \
-            .update({"is_member_active": "active"}) \
-            .eq("chat_id", chat.id) \
-            .eq("user_id", user.id) \
-            .execute()
-        print(f"👋 User joined: {user.first_name} in chat {chat.title}")
+        # --------------------
+        # USER leave via left_chat_member
+        # --------------------
+        elif update.message and update.message.left_chat_member:
+            chat = update.message.chat
+            user = update.message.left_chat_member
+            if user.id == bot_id:
+                return  # ignore self leaving
+            response = supabase.table("users").select("*").eq("telegram_id", user.id).execute()
+            supabase.table("chat_members").update({"is_member_active": "inactive"}).eq("user_id", response.data[0].get("id") if response.data else None).execute()
+            print(f"👋 User left: {user.first_name}")
+            return
 
-        message = (
-            f"👋 <b>Welcome to <u>{chat.title}</u>!</b>\n\n"
-            f"😊 Hi <b>{user.first_name}</b>, we’re glad to have you here.\n\n"
-            "📌 <i>Please read the pinned message and follow the group rules.</i>\n"
-            "🤝 Be respectful and enjoy your stay!"
-            )
+        # --------------------
+        # Process status for chat_member updates (USER join/leave)
+        # --------------------
+        if update.chat_member:
+            if user.id == bot_id:
+                return  # ignore self
+            if status == "member":
+                await handle_user_join(user, chat, ctx)
+            elif status == "left":
+                response = supabase.table("users").select("*").eq("telegram_id", user.id).execute()
+                supabase.table("chat_members").update({"is_member_active": "inactive"}).eq("user_id", response.data[0].get("id") if response.data else None).execute()
+                print(f"👋 User left: {user.first_name}")
 
-        await ctx.bot.send_message(
-            chat_id=user.id,
-            text=message,
-            parse_mode="HTML"
-        )
+        else:
+            print("No relevant chat member update found.")
 
-    # --------------------
-    # USER LEAVE
-    # --------------------
-    elif status == "left":
-        supabase.table("users") \
-            .update({"active": "inactive"}) \
-            .eq("telegram_id", user.id) \
-            .execute()
+    except Exception as e:
+        print("Error in chat member handler:", e)
 
-        print(f"👋 User left: {user.first_name}")
+
+async def handle_user_join(user, chat, ctx):
+    bot_id = (await ctx.bot.get_me()).id
+    if user.id == bot_id:
+        return  # never remove self
+
+    # Remove other bots
+    if user.is_bot:
+        await ctx.bot.ban_chat_member(chat.id, user.id)
+        print(f"🤖 Other bot removed in handle_user_join: {user.first_name}")
+        return
+
+    # check if verified in Supabase
+    response = supabase.table("users").select("*").eq("telegram_id", user.id).execute()
+    user_record = response.data[0] if response.data else None
+    print(f"User join check: {user.first_name}, record: {user_record}")
+
+    if not user_record or user_record.get("status") != "verified":
+        try:
+            await ctx.bot.send_message(user.id, "🚫 You were removed because your account is not verified. Please verify it first.")
+        except Exception:
+            pass
+        await ctx.bot.ban_chat_member(chat.id, user.id)
+        print(f"❌ Unverified user removed: {user.first_name}")
+        return
+
+    # Mark active
+    supabase.table("chat_members").upsert({"chat_id": chat.id, "user_id": user_record.get("id"), "is_member_active": "active"}).execute()
+
+    # Send welcome message
+    message = (
+        f"👋 <b>Welcome to <u>{chat.title}</u>!</b>\n\n"
+        f"😊 Hi <b>{user.first_name}</b>, we’re glad to have you here.\n\n"
+        "📌 <i>Please read the pinned message and follow the group rules.</i>\n"
+        "🤝 Be respectful and enjoy your stay!"
+    )
+    await ctx.bot.send_message(chat_id=user.id, text=message, parse_mode="HTML")
+    print(f"👋 User joined: {user.first_name} in chat {chat.title}")
+
 
 # --------------------
 # Inline queries
@@ -323,15 +350,20 @@ def main():
     )
 
     app.add_handler(conv)
-    app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.CHAT_MEMBER))
-    app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
-    app.add_handler(MessageHandler(filters.StatusUpdate.ALL, chat_migration))
+    # Chat member updates
+    app.add_handler(ChatMemberHandler(chat_member, ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
+
+    # Message status updates (new members or left)
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER, chat_member))
+
 
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("about", about))
     app.add_handler(CommandHandler("learn", send_learning_guide))
     app.add_handler(CallbackQueryHandler(lesson_callback))
     app.add_handler(InlineQueryHandler(inline_query))
+    app.add_handler(MessageHandler(filters.ALL, lambda u, c: print(u)))
+
 
     print("🤖 Bot running (PTB v20+, polling)...")
     app.run_polling()

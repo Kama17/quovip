@@ -57,7 +57,7 @@ const supabase = createClient(
 type UserChatInfo = {
   chat_id: string;
   chat_name: string;
-  is_member_active: "active" | "pending";
+  is_member_active: "active" | "pending" | "inactive" | "invited";
 };
 
 interface TelegramUser {
@@ -190,12 +190,14 @@ const AdminDashboard: React.FC = () => {
       return [];
     }
 
-    // Flatten the nested structure to match UserChatInfo type
-    const flattened = (data ?? []).map((item: any) => ({
-      chat_id: item.chat_id,
-      chat_name: item.bot_chats?.[0]?.chat_name || "",
-      is_member_active: item.is_member_active,
-    }));
+    // Flatten and filter out inactive members
+    const flattened = (data ?? [])
+      .filter((item: any) => item.is_member_active === "active") // <-- remove inactive
+      .map((item: any) => ({
+        chat_id: item.chat_id,
+        chat_name: item.bot_chats?.[0]?.chat_name || "",
+        is_member_active: item.is_member_active,
+      }));
 
     return flattened;
   };
@@ -316,15 +318,15 @@ const fetchChatMembers = async (chatId: string) => {
   };
 
   // Remove user from chat API call
-  const removeUserFromChat = async (chatId: string, userId: string) => {
-    console.log(`Removing user ${userId} from chat ${chatId}`);
+  const removeUserFromChat = async (chatId: string, telegramUserId: string, user_id: string) => {
+    console.log(`Removing user ${telegramUserId} from chat ${chatId}`);
   const res = await fetch(`https://${BACKEND_URL}/api/chats/remove-user`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${ADMIN_JWT_TOKEN}`
     },
-    body: JSON.stringify({ chat_id: chatId, telegram_user_id: userId })
+    body: JSON.stringify({ chat_id: chatId, telegram_user_id: telegramUserId })
     });
 
     if (!res.ok) {
@@ -337,7 +339,12 @@ const fetchChatMembers = async (chatId: string) => {
     message.error("Failed to remove user: " + data.message);
   } else {
     message.success("User removed successfully");
+    const { error } = await supabase.from("chat_members").update({ is_member_active: "inactive" }).eq("chat_id", chatId).eq("user_id", user_id);
+    if (error) {
+      message.error("Failed to update chat member status: " + error.message);
+    }
   }
+  setSelectedUser(null);
   return data;
 };
 
@@ -823,7 +830,7 @@ const handleAddUser = async (values: any) => {
                     <Button
                       size="small"
                       danger
-                       onClick={() => removeUserFromChat(chat.chat_id, selectedUser?.telegram_id!)}
+                       onClick={() => selectedUser?.telegram_id && removeUserFromChat(chat.chat_id, selectedUser.telegram_id, selectedUser.id!.toString())}
                        >Ban user</Button>
                     )}
                   </List.Item>
