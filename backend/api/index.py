@@ -1,3 +1,4 @@
+import asyncio
 import os
 from fastapi.params import Depends
 import json
@@ -185,7 +186,7 @@ async def send_message_to_selected_chats(
     chat_ids: str = Form(...),  # JSON string
     image: UploadFile | None = File(None),
     parse_mode: str = Form("HTML"),
-    admin=Depends(verify_admin)
+    admin=Depends(verify_admin),
 ):
     try:
         chat_ids = json.loads(chat_ids)
@@ -195,68 +196,75 @@ async def send_message_to_selected_chats(
     if not chat_ids or not isinstance(chat_ids, list):
         raise HTTPException(status_code=400, detail="chat_ids must be a list")
 
-    results = []
-    success = 0
-    failed = 0
+    image_bytes = None
+    if image:
+        image_bytes = await image.read()  # 🔹 read ONCE
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        for chat_id in chat_ids:
-            try:
-                if image:
-                    # 🔹 Send photo with caption
-                    files = {
-                        "photo": (
-                            image.filename,
-                            await image.read(),
-                            image.content_type
-                        )
-                    }
-                    data = {
-                        "chat_id": int(chat_id),
-                        "caption": text,
-                        "parse_mode": parse_mode
-                    }
-
-                    r = await client.post(
-                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-                        data=data,
-                        files=files
+    async def send_to_chat(client: httpx.AsyncClient, chat_id: int):
+        try:
+            if image_bytes:
+                files = {
+                    "photo": (
+                        image.filename,
+                        image_bytes,
+                        image.content_type,
                     )
-                else:
-                    # 🔹 Text-only message
-                    r = await client.post(
-                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                        json={
-                            "chat_id": int(chat_id),
-                            "text": text,
-                            "parse_mode": parse_mode,
-                            "disable_web_page_preview": True
-                        }
-                    )
-
-                result = r.json()
-
-                if result.get("ok"):
-                    success += 1
-                else:
-                    failed += 1
-                    results.append({
-                        "chat_id": chat_id,
-                        "error": result.get("description")
-                    })
-
-            except Exception as e:
-                failed += 1
-                results.append({
+                }
+                data = {
                     "chat_id": chat_id,
-                    "error": str(e)
-                })
+                    "caption": text,
+                    "parse_mode": parse_mode,
+                }
+
+                r = await client.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                    data=data,
+                    files=files,
+                )
+            else:
+                r = await client.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": text,
+                        "parse_mode": parse_mode,
+                        "disable_web_page_preview": True,
+                    },
+                )
+
+            result = r.json()
+            if result.get("ok"):
+                return {"chat_id": chat_id, "ok": True}
+            else:
+                return {
+                    "chat_id": chat_id,
+                    "ok": False,
+                    "error": result.get("description"),
+                }
+
+        except Exception as e:
+            return {
+                "chat_id": chat_id,
+                "ok": False,
+                "error": str(e),
+            }
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        tasks = [
+            send_to_chat(client, int(chat_id))
+            for chat_id in chat_ids
+        ]
+
+        results = await asyncio.gather(*tasks)
+
+    success = sum(1 for r in results if r["ok"])
+    failed = len(results) - success
 
     return {
         "ok": True,
         "sent": success,
         "failed": failed,
-        "errors": results
+        "errors": [r for r in results if not r["ok"]],
     }
 
 # need send infotation to the user
