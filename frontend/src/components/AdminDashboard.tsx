@@ -69,6 +69,7 @@ interface TelegramUser {
   status?: string;
   email?: string;
   telegram_id?: string;
+  telegram_name?: string;
   created_at?: string;
   is_member_active?: string;
   chats?: UserChatInfo[]; // 👈 joined chats
@@ -271,23 +272,33 @@ const fetchChatMembers = async (chatId: string) => {
     fetchUsers();
   };
 
-  // Fetch bot chats
-  const fetchBotChats = async () => {
-    setLoadingBotChats(true);
-    try {
-      const { data, error } = await supabase
-        .from("bot_chats") // table containing chat info
-        .select("*")
-        .order("created_at", { ascending: false });
+// Fetch bot chats with member counts
+const fetchBotChats = async () => {
+  setLoadingBotChats(true);
+  try {
+    const { data, error } = await supabase
+      .from("bot_chats")
+      .select(`
+        *,
+        chat_members!left (
+          user_id
+        )
+      `);
 
-      if (error) throw error;
-      setBotChats(data || []);
-    } catch (err: any) {
-      message.error("Failed to load bot chats: " + err.message);
-    } finally {
-      setLoadingBotChats(false);
-    }
-  };
+    if (error) throw error;
+
+    const chatsWithCount = data?.map(chat => ({
+      ...chat,
+      member_count: chat.chat_members?.length || 0
+    })) || [];
+
+    setBotChats(chatsWithCount);
+  } catch (err: any) {
+    message.error("Failed to load bot chats: " + err.message);
+  } finally {
+    setLoadingBotChats(false);
+  }
+};
 
   // Invite user to chat
   const inviteUserToChat = async (chatId: string, userId: string) => {
@@ -628,7 +639,7 @@ const handleAddUser = async (values: any) => {
                     />
                   </Space>
                 }
-                renderItem={(user) => (
+                renderItem={(user, index) => (
                   <List.Item
                     key={user.id}
                     style={{
@@ -643,7 +654,7 @@ const handleAddUser = async (values: any) => {
                     onClick={() => openDrawer(user)}
                   >
                     <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: "#1890ff" }}>{user.first_name?.[0] ?? "unknown"}</Avatar>}
+                      avatar={<Avatar style={{ backgroundColor: "#1890ff" }}>{index +1}</Avatar>}
                       title={user.first_name ? user.first_name + (user.last_name ? ` ${user.last_name}` : "") : "unknown"}
                       description={
                         <>
@@ -806,6 +817,9 @@ const handleAddUser = async (values: any) => {
             <Text>
               <b>User ID:</b> {selectedUser.user_id}
             </Text>
+            <Text>
+              <b>Telegram Name:</b> {selectedUser.telegram_name || "—"}
+            </Text>
           </div>
         )}
 
@@ -904,7 +918,8 @@ const handleAddUser = async (values: any) => {
               key={chat.id}>
               <List.Item.Meta
                 title={chat.chat_name || "No title"}
-                description={`Chat ID: ${chat.chat_id}`}
+                description={`Members: ${chat.member_count || 0}`}
+
               />
             </List.Item>
           )
