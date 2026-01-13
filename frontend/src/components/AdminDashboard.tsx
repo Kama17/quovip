@@ -416,7 +416,7 @@ const fetchChatMembers = async (chatId: string) => {
   const filteredUsers = users.filter((user) => {
     const text = searchText.toLowerCase();
     return (
-      user.first_name.toLowerCase().includes(text) ||
+      (user.first_name?.toLowerCase().includes(text) ?? false) ||
       (user.last_name?.toLowerCase().includes(text) ?? false) ||
       (user.user_name?.toLowerCase().includes(text) ?? false) ||
       (user.email?.toLowerCase().includes(text) ?? false) ||
@@ -643,8 +643,8 @@ const handleAddUser = async (values: any) => {
                     onClick={() => openDrawer(user)}
                   >
                     <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: "#1890ff" }}>{user.first_name[0]}</Avatar>}
-                      title={user.first_name + (user.last_name ? ` ${user.last_name}` : "")}
+                      avatar={<Avatar style={{ backgroundColor: "#1890ff" }}>{user.first_name?.[0] ?? "unknown"}</Avatar>}
+                      title={user.first_name ? user.first_name + (user.last_name ? ` ${user.last_name}` : "") : "unknown"}
                       description={
                         <>
                           <div>
@@ -797,7 +797,7 @@ const handleAddUser = async (values: any) => {
         {selectedUser && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Text>
-              <b>Full Name:</b> {selectedUser.first_name}{" "}
+              <b>Full Name:</b> {selectedUser.first_name || "unknown"}{" "}
               {selectedUser.last_name || ""}
             </Text>
             <Text>
