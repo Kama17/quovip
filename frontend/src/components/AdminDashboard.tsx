@@ -668,9 +668,9 @@ const handleAddUser = async (values: any) => {
                                 </>
                               ) : (
                                 <>
-                                  <b>Status:</b>{" "}
-                                  <Tag color={user.status === "verified" ? "green" : "gold"}>
-                                    {user.status || "unknown"}
+                                  <b>ID:</b>{" "}
+                                  <Tag color={user.user_id === "verified" ? "green" : "gold"}>
+                                    {user.user_id || "unknown"}
                                   </Tag>
                                 </>
                               )}
@@ -819,6 +819,12 @@ const handleAddUser = async (values: any) => {
             </Text>
             <Text>
               <b>Telegram Name:</b> {selectedUser.telegram_name || "—"}
+            </Text>
+            <Text>
+             <b>Status:</b>{" "}
+              <Tag color={selectedUser.status === "verified" ? "green" : "gold"}>
+                {selectedUser.status || "unknown"}
+              </Tag>
             </Text>
           </div>
         )}
