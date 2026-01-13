@@ -847,11 +847,19 @@ const handleAddUser = async (values: any) => {
                       </Tag>
                     </Space>
                     {status?.is_member_active === "active" && (
-                    <Button
-                      size="small"
-                      danger
-                       onClick={() => selectedUser?.telegram_id && removeUserFromChat(chat.chat_id, selectedUser.telegram_id, selectedUser.id!.toString())}
-                       >Ban user</Button>
+                       <Popconfirm
+                        icon={<QuestionCircleOutlined style={{ color: 'red' }} />}
+                        title="Kick user?"
+                        description="Are you sure you want to kick this user from the chat?"
+                        onConfirm={() => selectedUser?.telegram_id && removeUserFromChat(chat.chat_id, selectedUser.telegram_id, selectedUser.id!.toString())}
+                        okText="Yes"
+                        cancelText="No"
+                      >
+                        <Button size="small" danger >
+                          Kick user
+                        </Button>
+                      </Popconfirm>
+                  
                     )}
                   </List.Item>
                 );
