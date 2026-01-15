@@ -180,10 +180,28 @@ export const SendMessageModal: React.FC<SendMessageModalProps> = ({
               accept="image/*"
               listType="picture"
               fileList={fileList}
-              beforeUpload={() => false} // ⛔ prevent auto upload
               onPreview={handlePreview}
               onChange={({ fileList }) => setFileList(fileList.slice(-1))}
               maxCount={1}
+              onRemove={(file) => {
+                if (file.url) URL.revokeObjectURL(file.url);
+                setFileList([]);
+              }}
+              customRequest={({ file, onSuccess }) => {
+                const croppedFile = file as File;
+                const previewUrl = URL.createObjectURL(croppedFile);
+
+                setFileList([
+                  {
+                    uid: Date.now().toString(),
+                    name: croppedFile.name,
+                    status: 'done',
+                    url: previewUrl, // ✅ preview
+                  },
+                ]);
+
+                onSuccess?.('ok');
+              }}
             >
               <p className="ant-upload-drag-icon">
                 <InboxOutlined />
@@ -207,12 +225,12 @@ export const SendMessageModal: React.FC<SendMessageModalProps> = ({
               treeData={botChats}
               treeCheckable
               showCheckedStrategy={TreeSelect.SHOW_CHILD}
-              placeholder="Select chats / topics"
+              placeholder="Select chats / channels"
               style={{ width: '100%' }}
               allowClear
-              onChange={(values) => {
-                console.log('Selected chat/topic values:', values);
-              }}
+              // onChange={(values) => {
+              //   console.log('Selected chat/topic values:', values);
+              // }}
             />
           )}
         </Form.Item>

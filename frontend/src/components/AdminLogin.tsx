@@ -6,7 +6,6 @@ import { useNavigate } from 'react-router-dom';
 const { Content } = Layout;
 const { Title, Text } = Typography;
 
-
 const AdminLoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
