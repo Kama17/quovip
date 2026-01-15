@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from "react";
-import { Typography, message as msgAntd, Button, Input, Form } from "antd";
-import axios from "axios";
+import React, { useEffect, useState } from 'react';
+import { Typography, message as msgAntd, Button, Input, Form } from 'antd';
+import axios from 'axios';
 
-const BACKEND = "http://localhost:5000";
+const BACKEND = 'http://localhost:5000';
 
 const VerifyWebApp: React.FC = () => {
   const urlParams = new URLSearchParams(window.location.search);
-  const inviteToken = urlParams.get("token");
-  const userId = urlParams.get("user_id");
+  const inviteToken = urlParams.get('token');
+  const userId = urlParams.get('user_id');
 
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const verify = async () => {
     if (!inviteToken) {
-      msgAntd.error("❌ No invite token provided");
+      msgAntd.error('❌ No invite token provided');
       return;
     }
 
@@ -23,17 +23,17 @@ const VerifyWebApp: React.FC = () => {
       const res = await axios.post(`${BACKEND}/api/verify-webapp`, {
         inviteToken,
         telegram_user_id: userId,
-        initData: "" // optional Telegram initData
+        initData: '', // optional Telegram initData
       });
 
       if (res.data.success) {
-        msgAntd.success("✅ Verified successfully!");
+        msgAntd.success('✅ Verified successfully!');
         setVerified(true);
       } else {
-        msgAntd.error("❌ Verification failed: " + res.data.error);
+        msgAntd.error('❌ Verification failed: ' + res.data.error);
       }
     } catch (err: any) {
-      msgAntd.error("❌ Verification error: " + err.message);
+      msgAntd.error('❌ Verification error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -73,21 +73,21 @@ const VerifyWebApp: React.FC = () => {
           <Form.Item
             label="Enter Your ID"
             name="user_private_id"
-            rules={[{ required: true, message: "Please enter your ID" }]}
+            rules={[{ required: true, message: 'Please enter your ID' }]}
           >
             <Input placeholder="Enter your ID" />
           </Form.Item>
-                    <Form.Item
+          <Form.Item
             label="Name"
             name="name"
-            rules={[{ required: true, message: "Please enter your name" }]}
+            rules={[{ required: true, message: 'Please enter your name' }]}
           >
             <Input placeholder="Enter your name" />
           </Form.Item>
-                    <Form.Item
+          <Form.Item
             label="Suername"
             name="surname"
-            rules={[{ required: true, message: "Please enter your surname" }]}
+            rules={[{ required: true, message: 'Please enter your surname' }]}
           >
             <Input placeholder="Enter your surname" />
           </Form.Item>
