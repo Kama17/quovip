@@ -75,6 +75,11 @@ interface TelegramUser {
   chats?: UserChatInfo[]; // 👈 joined chats
 }
 
+  type BackendPayload = {
+  chat_id: string;
+  topic?: string;
+};
+
 
 type MenuKey = "users" | "invites" | "bot";
 
@@ -512,38 +517,38 @@ const handleAddUser = async (values: any) => {
     }
   };
 
-  const handleSend = async (
-    messageToSend: string,
-    chatIds: string[],
-    image?: File
-  ) => {
-    setSendingMessage(true);
+ const handleSend = async (
+  messageToSend: string,
+  targets: BackendPayload[],
+  image?: File
+) => {
+  setSendingMessage(true);
 
-    try {
-      const formData = new FormData();
-      formData.append("text", messageToSend);
-      formData.append("chat_ids", JSON.stringify(chatIds));
+  try {
+    const formData = new FormData();
+    formData.append("text", messageToSend);
+    formData.append("chat_ids", JSON.stringify(targets)); // ✅ correct
 
-      if (image) {
-        formData.append("image", image);
-      }
-
-      await fetch(`https://${BACKEND_URL}/api/chats/broadcast-message`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${ADMIN_JWT_TOKEN}`,
-        },
-        body: formData,
-      });
-
-      message.success("Message sent successfully");
-    } catch (err) {
-      console.error(err);
-      message.error("Failed to send message");
-    } finally {
-      setSendingMessage(false);
+    if (image) {
+      formData.append("image", image);
     }
-  };
+
+    await fetch(`https://${BACKEND_URL}/api/chats/broadcast-message`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ADMIN_JWT_TOKEN}`,
+      },
+      body: formData,
+    });
+
+    message.success("Message sent successfully");
+  } catch (err) {
+    console.error(err);
+    message.error("Failed to send message");
+  } finally {
+    setSendingMessage(false);
+  }
+};
 
 
   return (

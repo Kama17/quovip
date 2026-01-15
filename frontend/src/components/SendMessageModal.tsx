@@ -1,4 +1,4 @@
-import { Modal, Form, Input, Divider, message, Select, Spin, Upload } from "antd";
+import { Modal, Form, Input, Divider, message, Spin, Upload, TreeSelect } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
 import ImgCrop from "antd-img-crop";
 import { InboxOutlined } from "@ant-design/icons";
@@ -6,9 +6,21 @@ import { SendOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-interface BotChat {
+  type BackendPayload = {
   chat_id: string;
-  chat_name: string;
+  topic?: string;
+};
+
+interface ChatTreeNode {
+  title: string;
+  value: string;
+  key: string;
+  selectable: boolean;
+  children?: {
+    title: string;
+    value: string;
+    key: string;
+  }[];
 }
 
 interface SendMessageModalProps {
@@ -16,7 +28,7 @@ interface SendMessageModalProps {
   onClose: () => void;
   onSend: (
     message: string,
-    chatIds: string[],
+    targets: BackendPayload[], // ✅ FIXED
     image?: File
   ) => Promise<void>;
   sending?: boolean;
@@ -24,15 +36,16 @@ interface SendMessageModalProps {
 }
 
 
+
 export const SendMessageModal: React.FC<SendMessageModalProps> = ({
   open,
   onClose,
   onSend,
-  sending = false,
+  sending = false,      
 supabase
 }) => {
   const [form] = Form.useForm();
-  const [botChats, setBotChats] = useState<BotChat[]>([]);
+  const [botChats, setBotChats] = useState<ChatTreeNode[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
 
@@ -62,11 +75,31 @@ supabase
     try {
       const { data, error } = await supabase
         .from("bot_chats")
-        .select("chat_id, chat_name")
+        .select("chat_id, chat_name, bot_chats_topics(message_thread_id, topic_name)")
         .order("chat_name", { ascending: true });
 
       if (error) throw error;
-      setBotChats(data || []);
+    const treeData: ChatTreeNode[] = data.map(chat => {
+      const hasTopics = !!chat.bot_chats_topics?.length;
+
+      return {
+        title: chat.chat_name,
+        value: `chat:${chat.chat_id}`,
+        key: `chat:${chat.chat_id}`,
+        selectable: !hasTopics, // selectable ONLY if no topics
+        children: hasTopics
+          ? chat.bot_chats_topics!.map(topic => ({
+              title: topic.topic_name,
+              value: `topic:${chat.chat_id}:${topic.message_thread_id}`,
+              key: `topic:${chat.chat_id}:${topic.message_thread_id}`,
+            }))
+          : undefined,
+      };
+    });
+
+
+      setBotChats(treeData || []);
+      console.log("Fetched chats:", data);
     } catch (err: any) {
       message.error("Failed to fetch chats: " + err.message);
     } finally {
@@ -78,24 +111,53 @@ supabase
     if (open) fetchChats();
   }, [open]);
 
-  const handleOk = async () => {
-    try {
-      const values = await form.validateFields();
-      const selectedChatIds: string[] = values.chat_ids || [];
+const handleOk = async () => {
+  try {
+    const values = await form.validateFields();
 
-      const imageFile =
-        fileList.length > 0
-          ? (fileList[0].originFileObj as File)
-          : undefined;
+    const selectedValues: string[] = values.chat_ids;
+    const payload = mapSelectionToPayload(selectedValues);
 
-      await onSend(values.message, selectedChatIds, imageFile);
+    const imageFile =
+      fileList.length > 0
+        ? (fileList[0].originFileObj as File)
+        : undefined;
 
-      form.resetFields();
-      setFileList([]);
-    } catch (err) {
-      console.error(err);
+    await onSend(values.message, payload, imageFile);
+
+    form.resetFields();
+    setFileList([]);
+    onClose();
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+
+const mapSelectionToPayload = (values?: unknown[]): BackendPayload[] => {
+  if (!Array.isArray(values)) return [];
+
+  return values.reduce<BackendPayload[]>((acc, v) => {
+    if (typeof v !== "string") return acc;
+
+    // Topic selected
+    if (v.startsWith("topic:")) {
+      const [, chat_id, topic] = v.split(":");
+      acc.push({ chat_id, topic });
+      return acc;
     }
-  };
+
+    // Chat without topics
+    if (v.startsWith("chat:")) {
+      const [, chat_id] = v.split(":");
+      acc.push({ chat_id });
+      return acc;
+    }
+
+    return acc;
+  }, []);
+};
+
 
 
   return (
@@ -157,27 +219,26 @@ supabase
         {/* Select chats */}
         <Divider orientation="left">Select Chats</Divider>
         <Form.Item
-          name="chat_ids"
-          rules={[{ required: true, message: "Please select at least one chat" }]}
-        >
-          {loadingChats ? (
-            <Spin />
-          ) : (
-            <Select
-              mode="multiple"
-              placeholder="Select chats"
-              allowClear
-              style={{ width: "100%" }}
-              optionFilterProp="children"
-            >
-              {botChats.map(chat => (
-                <Select.Option key={chat.chat_id} value={chat.chat_id}>
-                  {chat.chat_name}
-                </Select.Option>
-              ))}
-            </Select>
-          )}
-        </Form.Item>
+  name="chat_ids"
+  rules={[{ required: true, message: "Please select at least one chat" }]}
+>
+  {loadingChats ? (
+    <Spin />
+  ) : (
+    <TreeSelect
+      treeData={botChats}
+      treeCheckable
+      showCheckedStrategy={TreeSelect.SHOW_CHILD}
+      placeholder="Select chats / topics"
+      style={{ width: "100%" }}
+      allowClear
+      onChange={(values) => {
+      console.log("Selected chat/topic values:", values);
+      }}
+    />
+  )}
+</Form.Item>
+
       </Form>
     </Modal>
   );

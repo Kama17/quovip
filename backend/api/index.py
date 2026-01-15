@@ -1,5 +1,6 @@
 import asyncio
 import os
+from typing import Optional, List, Dict
 from fastapi.params import Depends
 import json
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
@@ -188,20 +189,43 @@ async def send_message_to_selected_chats(
     parse_mode: str = Form("HTML"),
     admin=Depends(verify_admin),
 ):
+    # 1️⃣ Parse payload
     try:
-        chat_ids = json.loads(chat_ids)
+        chat_targets: List[Dict] = json.loads(chat_ids)
     except Exception:
-        raise HTTPException(status_code=400, detail="chat_ids must be a JSON array")
+        raise HTTPException(status_code=400, detail="chat_ids must be valid JSON")
 
-    if not chat_ids or not isinstance(chat_ids, list):
+    if not isinstance(chat_targets, list):
         raise HTTPException(status_code=400, detail="chat_ids must be a list")
 
+    for item in chat_targets:
+        if not isinstance(item, dict) or "chat_id" not in item:
+            raise HTTPException(
+                status_code=400,
+                detail="Each item must be { chat_id: string, topic?: string }",
+            )
+
+    # 2️⃣ Read image ONCE
     image_bytes = None
     if image:
-        image_bytes = await image.read()  # 🔹 read ONCE
+        image_bytes = await image.read()
 
-    async def send_to_chat(client: httpx.AsyncClient, chat_id: int):
+    async def send_to_chat(
+        client: httpx.AsyncClient,
+        chat_id: int,
+        topic: Optional[str] = None,
+    ):
         try:
+            print("Preparing to send to:", chat_id, "topic:", topic)
+            # Common params
+            base_params = {
+                "chat_id": chat_id,
+                "parse_mode": parse_mode,
+            }
+
+            if topic:
+                base_params["message_thread_id"] = int(topic)
+
             if image_bytes:
                 files = {
                     "photo": (
@@ -211,9 +235,8 @@ async def send_message_to_selected_chats(
                     )
                 }
                 data = {
-                    "chat_id": chat_id,
+                    **base_params,
                     "caption": text,
-                    "parse_mode": parse_mode,
                 }
 
                 r = await client.post(
@@ -222,22 +245,29 @@ async def send_message_to_selected_chats(
                     files=files,
                 )
             else:
+                print("Sending to:", chat_id, "topic:", topic)
+
                 r = await client.post(
                     f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                     json={
-                        "chat_id": chat_id,
+                        **base_params,
                         "text": text,
-                        "parse_mode": parse_mode,
                         "disable_web_page_preview": True,
                     },
                 )
 
             result = r.json()
+            print("Result:", result)
             if result.get("ok"):
-                return {"chat_id": chat_id, "ok": True}
+                return {
+                    "chat_id": chat_id,
+                    "topic": topic,
+                    "ok": True,
+                }
             else:
                 return {
                     "chat_id": chat_id,
+                    "topic": topic,
                     "ok": False,
                     "error": result.get("description"),
                 }
@@ -245,18 +275,25 @@ async def send_message_to_selected_chats(
         except Exception as e:
             return {
                 "chat_id": chat_id,
+                "topic": topic,
                 "ok": False,
                 "error": str(e),
             }
 
+    # 3️⃣ Send concurrently
     async with httpx.AsyncClient(timeout=15) as client:
         tasks = [
-            send_to_chat(client, int(chat_id))
-            for chat_id in chat_ids
+            send_to_chat(
+                client,
+                int(item["chat_id"]),
+                item.get("topic"),
+            )
+            for item in chat_targets
         ]
 
         results = await asyncio.gather(*tasks)
 
+    # 4️⃣ Summary
     success = sum(1 for r in results if r["ok"])
     failed = len(results) - success
 
@@ -266,7 +303,6 @@ async def send_message_to_selected_chats(
         "failed": failed,
         "errors": [r for r in results if not r["ok"]],
     }
-
 # need send infotation to the user
 # @app.post("/api/chats/send-message")
 
