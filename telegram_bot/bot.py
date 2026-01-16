@@ -127,40 +127,6 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Verification cancelled.")
     return ConversationHandler.END
 
-# --------------------
-# CHAT MIGRATION (group → supergroup)
-# --------------------
-async def chat_migration(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    if not message:
-        return
-
-    if message.migrate_from_chat_id:
-        old_id = message.migrate_from_chat_id
-        new_id = message.chat.id
-        new_name = message.chat.title or "Unnamed chat"
-
-        exists = supabase.table("bot_chats") \
-            .select("chat_id") \
-            .eq("chat_id", new_id) \
-            .execute()
-
-        if exists.data:
-            return
-
-
-        supabase.table("bot_chats") \
-            .update({"chat_id": new_id, "chat_name": new_name}) \
-            .eq("chat_id", old_id) \
-            .execute()
-
-        supabase.table("chat_members") \
-            .update({"chat_id": new_id}) \
-            .eq("chat_id", old_id) \
-            .execute()
-
-        print(f"🔁 Chat migrated {old_id} → {new_id}")
-
 
 async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
@@ -245,6 +211,49 @@ async def chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print("Error in chat member handler:", e)
+# --------------------
+# Chat title update
+async def chat_title_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.message and update.message.new_chat_title:
+        chat = update.message.chat
+        new_title = update.message.new_chat_title
+        supabase.table("bot_chats").update({"chat_name": new_title}).eq("chat_id", chat.id).execute()
+        print(f"✏️ Chat title updated to: {new_title}")
+
+# --------------------
+# Chat migration handler
+async def handle_migrate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles chat migration: update bot_chats.chat_id, preserve PK for topics.
+    """
+    try:
+        if not update.message:
+            return
+
+        old_telegram_id = update.message.migrate_from_chat_id
+        new_telegram_id = update.message.migrate_to_chat_id
+
+        if old_telegram_id and new_telegram_id:
+            print(f"📦 Chat migrated from {old_telegram_id} to {new_telegram_id}")
+
+            # Find internal bot_chats row by old chat_id
+            result = supabase.table("bot_chats").select("*").eq("chat_id", old_telegram_id).execute()
+            if not result.data:
+                print(f"⚠️ No bot_chats row found for old chat_id {old_telegram_id}")
+                return
+
+            bot_chat_id = result.data[0]["id"]
+
+            # Update chat_id to new Telegram ID (keep PK intact)
+            supabase.table("bot_chats").update({"chat_id": new_telegram_id}).eq("id", bot_chat_id).execute()
+
+            print(f"✅ Updated bot_chats.chat_id to new Telegram ID {new_telegram_id}, bot_chats_id remains {bot_chat_id}")
+
+        else:
+            print("Migration message without old/new chat IDs, skipping.")
+
+    except Exception as e:
+        print("Error in handle_migrate:", e)
 
 
 async def handle_user_join(user, chat, ctx):
@@ -356,6 +365,10 @@ def main():
 
     # Message status updates (new members or left)
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER, chat_member))
+    # Chat title updates
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, chat_title_update))
+    # Chat migration handler
+    app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, handle_migrate))
 
 
     app.add_handler(CommandHandler("help", help))
