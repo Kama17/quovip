@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layout, Form, Input, Button, Typography, Card, Space, message } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -10,22 +11,34 @@ const AdminLoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const onFinish = (values: { username: string; password: string }) => {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        navigate('/admin/dashboard');
+      }
+    });
+  }, []);
+
+  const onFinish = async (values: { username: string; password: string }) => {
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: values.username,
+      password: values.password,
+    });
 
-      if (
-        values.username === import.meta.env.VITE_ADMIN_USERNAME &&
-        values.password === import.meta.env.VITE_ADMIN_PASSWORD
-      ) {
-        message.success('Logged in successfully');
-        navigate('/admin/dashboard');
-      } else {
-        message.error('Incorrect username or password');
-      }
-    }, 500);
+    if (error || !data.user) {
+      setLoading(false);
+      message.error('Incorrect username or password');
+      return;
+    }
+
+    if (data.user) {
+      setLoading(false);
+      message.success('Logged in successfully');
+      navigate('/admin/dashboard');
+      return;
+    }
   };
 
   return (

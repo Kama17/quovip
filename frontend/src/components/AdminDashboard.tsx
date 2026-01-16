@@ -19,6 +19,7 @@ import {
   Tag,
   FloatButton,
 } from 'antd';
+
 import {
   TeamOutlined,
   LinkOutlined,
@@ -35,21 +36,18 @@ import {
   QuestionCircleOutlined,
   AuditOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+
+import { supabase } from '../lib/supabase';
+
 import { SendMessageModal } from './SendMessageModal';
-//import axios from "axios";
-import { createClient } from '@supabase/supabase-js';
+import { useAuth } from '../context/AuthContext';
 
 const { Content } = Layout;
 const { Text } = Typography;
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 const PAGE_SIZE = 20;
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL!;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY!;
 const ADMIN_JWT_TOKEN = import.meta.env.VITE_ADMIN_JWT_TOKEN || '';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 type UserChatInfo = {
   chat_id: string;
@@ -81,7 +79,7 @@ type BackendPayload = {
 type MenuKey = 'users' | 'invites' | 'bot';
 
 const AdminDashboard: React.FC = () => {
-  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [selectedMenu, setSelectedMenu] = useState<MenuKey>('users');
 
   const [users, setUsers] = useState<TelegramUser[]>([]);
@@ -117,14 +115,11 @@ const AdminDashboard: React.FC = () => {
   // Form instance for Add/Edit User
   const [form] = Form.useForm();
 
-  // Select component Option for chat names
-  //const { Option } = Select;
-
   const [loadingBotChats, setLoadingBotChats] = useState(false);
   const [botChats, setBotChats] = useState<any[]>([]);
 
-  const onLogout = () => {
-    navigate('/admin/login', { replace: true });
+  const onLogout = async () => {
+    await signOut();
   };
 
   // Separate chats into member and non-member based on selected user

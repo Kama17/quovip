@@ -224,13 +224,11 @@ export const SendMessageModal: React.FC<SendMessageModalProps> = ({
             <TreeSelect
               treeData={botChats}
               treeCheckable
+              placement="topRight"
               showCheckedStrategy={TreeSelect.SHOW_CHILD}
               placeholder="Select chats / channels"
               style={{ width: '100%' }}
               allowClear
-              // onChange={(values) => {
-              //   console.log('Selected chat/topic values:', values);
-              // }}
             />
           )}
         </Form.Item>
